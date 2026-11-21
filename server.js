@@ -22,8 +22,14 @@ const GMAIL_APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g
 
 const gmailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
   ? nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD }
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
+      requireTLS: true,
+      auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000
     })
   : null;
 
@@ -162,30 +168,36 @@ async function sendMailNow({ to, subject, html, text, eventTitle }) {
     : String(to || '').split(',').map(x => x.trim().toLowerCase()).filter(e => e.includes('@'));
 
   if (!recipients.length) {
-    return { ok: false, error: 'Nessun destinatario valido' };
+    return { ok: false, error: 'Nessun destinatario valido (inserisci un indirizzo o registra un utente)' };
   }
   if (!gmailTransporter) {
-    return { ok: false, error: 'GMAIL_USER o GMAIL_APP_PASSWORD non configurati su Render' };
+    return { ok: false, error: `Credenziali Gmail mancanti su Render (GMAIL_USER=${GMAIL_USER ? 'OK' : 'MANCANTE'}, GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD ? 'OK' : 'MANCANTE'})` };
   }
 
-  const info = await gmailTransporter.sendMail({
-    from: `"UfficioCal Bot" <${GMAIL_USER}>`,
-    to: recipients.join(', '),
-    subject: subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`,
-    text: text || undefined,
-    html: html || `<p>Notifica per l'impegno <strong>${eventTitle || 'Impegno'}</strong>.</p>`
-  });
+  try {
+    const info = await gmailTransporter.sendMail({
+      from: `"UfficioCal Bot" <${GMAIL_USER}>`,
+      to: recipients.join(', '),
+      subject: subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`,
+      text: text || undefined,
+      html: html || `<p>Notifica per l'impegno <strong>${eventTitle || 'Impegno'}</strong>.</p>`
+    });
 
-  const record = {
-    id: 'mail_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-    to: recipients,
-    subject: subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`,
-    sentAt: new Date().toISOString(),
-    messageId: info.messageId || ''
-  };
-  state.sentEmails = [record, ...(state.sentEmails || [])].slice(0, 100);
-  persistAll();
-  return { ok: true, record, sentEmails: state.sentEmails };
+    const record = {
+      id: 'mail_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+      to: recipients,
+      subject: subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`,
+      sentAt: new Date().toISOString(),
+      messageId: info.messageId || ''
+    };
+    state.sentEmails = [record, ...(state.sentEmails || [])].slice(0, 100);
+    persistAll();
+    return { ok: true, record, sentEmails: state.sentEmails };
+  } catch (err) {
+    const detail = err.response || err.message || 'Errore SMTP Gmail';
+    console.error('Errore sendMailNow:', detail);
+    return { ok: false, error: `${err.code || 'SMTP'}: ${detail}` };
+  }
 }
 
 function normalizeAlerts(ev) {
@@ -234,19 +246,20 @@ async function checkScheduledAlerts() {
       const alTs = parseAlertTs(al.date, al.time);
       if (alTs !== null && alTs <= nowTs) {
         if (recipients.length && gmailTransporter) {
-          try {
-            await sendMailNow({
-              to: recipients,
-              subject: `Alert #${al.index} UfficioCal: ${ev.title || 'Impegno'}`,
-              eventTitle: ev.title,
-              html: `<p><strong>Alert #${al.index} per l'impegno:</strong> ${ev.title || 'Impegno'}</p><p>Data impegno: <strong>${ev.date || ''}</strong> (${ev.startTime || ''} - ${ev.endTime || ''})</p><p>Orario alert impostato: <strong>${al.date} alle ${al.time}</strong></p>`
-            });
-          } catch (err) {
-            console.error('Errore invio alert:', err.message);
+          const res = await sendMailNow({
+            to: recipients,
+            subject: `Alert #${al.index} UfficioCal: ${ev.title || 'Impegno'}`,
+            eventTitle: ev.title,
+            html: `<p><strong>Alert #${al.index} per l'impegno:</strong> ${ev.title || 'Impegno'}</p><p>Data impegno: <strong>${ev.date || ''}</strong> (${ev.startTime || ''} - ${ev.endTime || ''})</p><p>Orario alert impostato: <strong>${al.date} alle ${al.time}</strong></p>`
+          });
+          if (res.ok) {
+            al.sentAt = new Date().toISOString();
+            changed = true;
           }
+        } else {
+          al.sentAt = new Date().toISOString();
+          changed = true;
         }
-        al.sentAt = new Date().toISOString();
-        changed = true;
       }
     }
   }
@@ -274,7 +287,12 @@ function deleteEventById(rawId) {
 }
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, gmailConfigured: Boolean(gmailTransporter), time: new Date().toISOString() });
+  res.json({
+    ok: true,
+    gmailUserSet: Boolean(GMAIL_USER),
+    gmailPassSet: Boolean(GMAIL_APP_PASSWORD),
+    time: new Date().toISOString()
+  });
 });
 
 app.get('/api/state', (req, res) => {
@@ -366,19 +384,18 @@ app.post('/api/events/delete', (req, res) => {
 
 app.post('/api/send-email', async (req, res) => {
   const { to, subject, html, text, eventTitle, recipientMode } = req.body || {};
+  const explicitList = Array.isArray(to)
+    ? to
+    : String(to || '').split(',').map(x => x.trim()).filter(Boolean);
   const finalTo = recipientMode === 'all'
-    ? Array.from(new Set([...getAllRegisteredEmails(), ...(Array.isArray(to) ? to : String(to || '').split(',').map(x => x.trim()))]))
-    : to;
+    ? Array.from(new Set([...getAllRegisteredEmails(), ...explicitList]))
+    : explicitList;
 
-  try {
-    const result = await sendMailNow({ to: finalTo, subject, html, text, eventTitle });
-    if (!result.ok) {
-      return res.status(400).json(result);
-    }
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message || 'Errore invio email' });
+  const result = await sendMailNow({ to: finalTo, subject, html, text, eventTitle });
+  if (!result.ok) {
+    return res.status(400).json(result);
   }
+  res.json(result);
 });
 
 app.post('/api/ai', async (req, res) => {
