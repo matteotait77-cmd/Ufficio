@@ -1100,6 +1100,7 @@
             const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 8000); const resp = await fetch(url, { method: 'DELETE', signal: ctrl.signal }); clearTimeout(t);
             const data = await resp.json().catch(() => ({}));
             if (resp.ok && data.ok) {
+              if (typeof window.ufficioRemoveBadgeFromGrid === 'function') window.ufficioRemoveBadgeFromGrid(ev.title, ev.startTime, ev.endTime);
               syncAppViews(data.events);
               await openDay(activeDate, 'Impegno eliminato.', false);
             } else {
@@ -1185,5 +1186,43 @@
   };
 })();
 </script>
+<!-- UFFICIO_GRID_SYNC_START -->
+<script>
+(function () {
+  window.ufficioRemoveBadgeFromGrid = function (title, startTime, endTime) {
+    const t = String(title || '').trim().toLowerCase();
+    const s = String(startTime || '').trim();
+    const e = String(endTime || '').trim();
+    const compactRange = (s && e) ? `${s}-${e}` : '';
+    const spacedRange = (s && e) ? `${s} - ${e}` : '';
+
+    const nodes = Array.from(document.querySelectorAll('body *'));
+    for (const el of nodes) {
+      if (!el || !el.parentNode) continue;
+      if (el.id === 'ufficio-panel-clean' || (el.closest && el.closest('#ufficio-panel-clean'))) continue;
+      const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!txt || txt.length > 80) continue;
+
+      const lower = txt.toLowerCase();
+      const hasTitle = t ? lower.includes(t) : true;
+      const hasRange = (compactRange && txt.includes(compactRange)) || (spacedRange && txt.includes(spacedRange));
+
+      if ((t && hasRange && hasTitle) || (t && lower === t)) {
+        // Evita di cancellare l'intera cella del giorno (es. se contiene solo il numero del giorno + badge)
+        const directBadges = Array.from(el.querySelectorAll('span, div, button, a, small, p')).filter(child => {
+          const cTxt = (child.innerText || child.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+          return cTxt && ((t && cTxt.includes(t)) || (compactRange && cTxt.includes(compactRange)) || (spacedRange && cTxt.includes(spacedRange)));
+        });
+        if (directBadges.length > 0) {
+          directBadges.forEach(b => b.remove());
+        } else {
+          el.remove();
+        }
+      }
+    }
+  };
+})();
+</script>
+<!-- UFFICIO_GRID_SYNC_END -->
 </body>
 </html>
