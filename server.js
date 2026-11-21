@@ -419,9 +419,6 @@ async function processScheduledAlerts() {
   }
 }
 
-const UPSTASH_URL = (process.env.UPSTASH_REDIS_REST_URL || '').trim().replace(/\/+$/, '');
-const UPSTASH_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
-const CLOUD_STATE_KEY = 'ufficiocal:state:v1';
 
 async function syncStateToCloud() {
   if (!UPSTASH_URL || !UPSTASH_TOKEN) return;
