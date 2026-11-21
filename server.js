@@ -178,6 +178,19 @@ const gmailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
     })
   : null;
 
+const GMAIL_USER = (process.env.GMAIL_USER || '').trim();
+const GMAIL_APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+
+const gmailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: GMAIL_USER,
+        pass: GMAIL_APP_PASSWORD
+      }
+    })
+  : null;
+
 async function dispatchResendEmail({ to, subject, html, eventTitle, color, source }) {
   const recipients = Array.isArray(to)
     ? Array.from(new Set(to.map(x => String(x || '').trim().toLowerCase()).filter(Boolean)))
