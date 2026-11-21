@@ -352,6 +352,116 @@
   </section>
 
   <section id="appScreen" class="screen">
+<!-- UFFICIO_DEL_POS2_START -->
+<div id="ufficio-del-wrap" style="margin:12px 0;padding:12px;border:1px solid rgba(239,68,68,0.45);border-radius:12px;background:rgba(15,23,42,0.75);">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+    <strong style="font-size:0.9rem;color:#fca5a5;">Gestione rapida eliminazione impegni</strong>
+    <button id="ufficio-del-toggle" type="button" style="background:#dc2626;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:0.82rem;font-weight:700;cursor:pointer;">Mostra / Aggiorna lista impegni</button>
+  </div>
+  <div id="ufficio-del-msg" style="margin-top:8px;font-size:0.8rem;color:#fbbf24;"></div>
+  <div id="ufficio-del-items" style="margin-top:8px;display:flex;flex-direction:column;gap:8px;"></div>
+</div>
+<script>
+(function () {
+  if (window.__ufficioDelPos2) return;
+  window.__ufficioDelPos2 = true;
+
+  const toggleBtn = document.getElementById('ufficio-del-toggle');
+  const msgEl = document.getElementById('ufficio-del-msg');
+  const itemsEl = document.getElementById('ufficio-del-items');
+
+  async function reqDelete(id) {
+    const cleanId = String(id || '').trim();
+    let r = await fetch('/api/events/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({ id: cleanId })
+    });
+    let j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      r = await fetch('/api/events/' + encodeURIComponent(cleanId), {
+        method: 'DELETE',
+        cache: 'no-store'
+      });
+      j = await r.json().catch(() => ({}));
+    }
+    return { r, j };
+  }
+
+  async function refreshList() {
+    if (!msgEl || !itemsEl) return;
+    msgEl.style.color = '#fbbf24';
+    msgEl.textContent = 'Caricamento impegni...';
+    itemsEl.innerHTML = '';
+
+    try {
+      const r = await fetch('/api/state', { cache: 'no-store' });
+      const d = await r.json().catch(() => ({}));
+      const list = Array.isArray(d.events) ? d.events : [];
+      msgEl.style.color = '#94a3b8';
+      msgEl.textContent = list.length ? `Impegni trovati: ${list.length}` : 'Nessun impegno salvato.';
+
+      list.forEach(ev => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:8px;background:#1e293b;border:1px solid #334155;';
+
+        const left = document.createElement('div');
+        left.style.cssText = 'min-width:0;';
+        left.innerHTML = `<div style="font-weight:700;font-size:0.86rem;color:#f8fafc;">${(ev.title || '(Senza titolo)')}</div><div style="font-size:0.76rem;color:#94a3b8;">${(ev.date || '')} • ${(ev.startTime || '')}-${(ev.endTime || '')} • ID: ${(ev.id || '')}</div>`;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'Elimina';
+        btn.style.cssText = 'background:#ef4444;color:#fff;border:none;border-radius:7px;padding:6px 11px;font-size:0.8rem;font-weight:700;cursor:pointer;flex-shrink:0;';
+
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          btn.disabled = true;
+          btn.textContent = '...';
+          msgEl.style.color = '#fbbf24';
+          msgEl.textContent = `Eliminazione di ${ev.id}...`;
+
+          try {
+            const { r: resp, j: data } = await reqDelete(ev.id);
+            if (resp.ok && data.ok) {
+              msgEl.style.color = '#4ade80';
+              msgEl.textContent = `Eliminato (${resp.status}). Aggiornamento...`;
+              await refreshList();
+            } else {
+              btn.disabled = false;
+              btn.textContent = 'Elimina';
+              msgEl.style.color = '#f87171';
+              msgEl.textContent = `Errore HTTP ${resp.status}: ${JSON.stringify(data)}`;
+            }
+          } catch (err) {
+            btn.disabled = false;
+            btn.textContent = 'Elimina';
+            msgEl.style.color = '#f87171';
+            msgEl.textContent = 'Errore: ' + (err && err.message ? err.message : err);
+          }
+        });
+
+        row.appendChild(left);
+        row.appendChild(btn);
+        itemsEl.appendChild(row);
+      });
+    } catch (err) {
+      msgEl.style.color = '#f87171';
+      msgEl.textContent = 'Errore lettura /api/state: ' + (err && err.message ? err.message : err);
+    }
+  }
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      refreshList();
+    });
+  }
+})();
+</script>
+<!-- UFFICIO_DEL_POS2_END -->
     <header class="glass-card topbar">
       <div>
         <h2 id="welcomeTitle">UfficioCal</h2>
@@ -992,193 +1102,5 @@
   };
 })();
 </script>
-<!-- UFFICIO_DEL_ALTERNATIVE_START -->
-<script>
-(function () {
-  if (window.__ufficioDelAlt) return;
-  window.__ufficioDelAlt = true;
-
-  function buildUI() {
-    if (document.getElementById('ufficio-del-trigger')) return;
-
-    const btn = document.createElement('button');
-    btn.id = 'ufficio-del-trigger';
-    btn.type = 'button';
-    btn.textContent = '🗑 Elimina impegno';
-    btn.style.cssText = [
-      'position:fixed',
-      'bottom:16px',
-      'left:16px',
-      'z-index:2147483647',
-      'background:#dc2626',
-      'color:#ffffff',
-      'border:2px solid #fca5a5',
-      'border-radius:10px',
-      'padding:10px 14px',
-      'font-size:13px',
-      'font-weight:700',
-      'cursor:pointer',
-      'box-shadow:0 10px 25px rgba(0,0,0,0.5)'
-    ].join(';');
-
-    const panel = document.createElement('div');
-    panel.id = 'ufficio-del-panel';
-    panel.style.cssText = [
-      'position:fixed',
-      'bottom:64px',
-      'left:16px',
-      'width:350px',
-      'max-width:calc(100vw - 32px)',
-      'max-height:65vh',
-      'overflow:auto',
-      'z-index:2147483647',
-      'display:none',
-      'flex-direction:column',
-      'gap:8px',
-      'background:#0f172a',
-      'color:#f8fafc',
-      'border:2px solid #ef4444',
-      'border-radius:12px',
-      'padding:14px',
-      'box-shadow:0 18px 40px rgba(0,0,0,0.75)',
-      'font-family:sans-serif'
-    ].join(';');
-
-    panel.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;padding-bottom:8px;">
-        <strong style="font-size:14px;">Elimina un impegno</strong>
-        <button id="ufficio-del-close" type="button" style="background:#1e293b;color:#fff;border:1px solid #475569;border-radius:6px;padding:2px 8px;cursor:pointer;">✕</button>
-      </div>
-      <div id="ufficio-del-status" style="font-size:12px;color:#fbbf24;min-height:14px;"></div>
-      <div id="ufficio-del-list" style="display:flex;flex-direction:column;gap:8px;"></div>
-    `;
-
-    document.body.appendChild(btn);
-    document.body.appendChild(panel);
-
-    document.getElementById('ufficio-del-close').addEventListener('click', () => {
-      panel.style.display = 'none';
-    });
-
-    btn.addEventListener('click', async () => {
-      if (panel.style.display === 'flex') {
-        panel.style.display = 'none';
-        return;
-      }
-      panel.style.display = 'flex';
-      await loadAndRenderList();
-    });
-  }
-
-  async function fetchWithTimeout(url, opts, ms = 5000) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), ms);
-    try {
-      return await fetch(url, { ...(opts || {}), signal: ctrl.signal });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  async function callDelete(evId) {
-    const idStr = String(evId || '').trim();
-    let r = await fetchWithTimeout('/api/events/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      cache: 'no-store',
-      body: JSON.stringify({ id: idStr })
-    }, 5000);
-    let j = await r.json().catch(() => ({}));
-
-    if (!r.ok || !j.ok) {
-      const enc = encodeURIComponent(idStr);
-      r = await fetchWithTimeout(`/api/events/${enc}`, {
-        method: 'DELETE',
-        cache: 'no-store'
-      }, 5000);
-      j = await r.json().catch(() => ({}));
-    }
-    return { r, j };
-  }
-
-  async function loadAndRenderList() {
-    const st = document.getElementById('ufficio-del-status');
-    const list = document.getElementById('ufficio-del-list');
-    st.style.color = '#fbbf24';
-    st.textContent = 'Caricamento impegni...';
-    list.innerHTML = '';
-
-    try {
-      const resp = await fetch('/api/state', { cache: 'no-store' });
-      const data = await resp.json().catch(() => ({}));
-      const events = Array.isArray(data.events) ? data.events : [];
-
-      st.textContent = events.length ? `Trovati ${events.length} impegni:` : 'Nessun impegno presente.';
-
-      for (const ev of events) {
-        const item = document.createElement('div');
-        item.style.cssText = 'background:#1e293b;border:1px solid #334155;border-radius:8px;padding:8px 10px;display:flex;justify-content:space-between;align-items:center;gap:8px;';
-
-        const meta = document.createElement('div');
-        meta.style.cssText = 'min-width:0;display:flex;flex-direction:column;gap:2px;';
-        const title = document.createElement('div');
-        title.style.cssText = 'font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-        title.textContent = ev.title || '(Senza titolo)';
-        const sub = document.createElement('div');
-        sub.style.cssText = 'font-size:11px;color:#94a3b8;';
-        sub.textContent = `${ev.date || ''} • ${ev.startTime || ''}–${ev.endTime || ''}`;
-        meta.appendChild(title);
-        meta.appendChild(sub);
-
-        const del = document.createElement('button');
-        del.type = 'button';
-        del.textContent = 'Elimina';
-        del.style.cssText = 'background:#ef4444;color:#fff;border:none;border-radius:6px;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;';
-
-        del.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          del.disabled = true;
-          del.textContent = '...';
-          st.style.color = '#fbbf24';
-          st.textContent = `Invio eliminazione per ID ${ev.id}...`;
-          try {
-            const { r, j } = await callDelete(ev.id);
-            if (r.ok && j.ok) {
-              st.style.color = '#4ade80';
-              st.textContent = `Eliminato (HTTP ${r.status}). Aggiornamento lista...`;
-              await loadAndRenderList();
-            } else {
-              del.disabled = false;
-              del.textContent = 'Elimina';
-              st.style.color = '#f87171';
-              st.textContent = `HTTP ${r.status}: ${JSON.stringify(j)}`;
-            }
-          } catch (err) {
-            del.disabled = false;
-            del.textContent = 'Elimina';
-            st.style.color = '#f87171';
-            st.textContent = 'Errore fetch: ' + (err && err.message ? err.message : err);
-          }
-        });
-
-        item.appendChild(meta);
-        item.appendChild(del);
-        list.appendChild(item);
-      }
-    } catch (err) {
-      st.style.color = '#f87171';
-      st.textContent = 'Errore lettura stato: ' + (err && err.message ? err.message : err);
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', buildUI);
-  } else {
-    buildUI();
-  }
-})();
-</script>
-<!-- UFFICIO_DEL_ALTERNATIVE_END -->
 </body>
 </html>
