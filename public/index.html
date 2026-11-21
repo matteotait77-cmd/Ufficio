@@ -963,5 +963,44 @@
     syncFromServer();
     updateScreen();
   </script>
+<script>
+(function() {
+  window.deleteEventFromServer = async function(eventId) {
+    if (!eventId) return false;
+    try {
+      const res = await fetch('/api/events/' + encodeURIComponent(String(eventId)), { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        if (Array.isArray(window.events)) {
+          window.events = window.events.filter(ev => String(ev.id) !== String(eventId));
+        }
+        if (typeof window.renderCalendar === 'function') window.renderCalendar();
+        if (typeof window.renderEvents === 'function') window.renderEvents();
+        if (typeof window.renderAll === 'function') window.renderAll();
+        return true;
+      }
+    } catch (err) {
+      console.error('Errore eliminazione evento:', err);
+    }
+    return false;
+  };
+
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('button, a');
+    if (!btn) return;
+    const label = (btn.textContent || '').trim().toLowerCase();
+    if (label === 'elimina' || label === 'elimina impegno' || btn.dataset.deleteEventId) {
+      const evId = btn.dataset.deleteEventId
+        || btn.getAttribute('data-id')
+        || (window.selectedEvent && window.selectedEvent.id)
+        || (window.editingEvent && window.editingEvent.id)
+        || (window.currentEvent && window.currentEvent.id);
+      if (evId) {
+        window.deleteEventFromServer(evId);
+      }
+    }
+  }, true);
+})();
+</script>
 </body>
 </html>

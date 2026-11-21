@@ -1,3 +1,4 @@
+const nodemailer = require('nodemailer');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -164,57 +165,52 @@ function recordSentEmail(entry) {
   state.sentEmails = state.sentEmails.slice(0, 200);
 }
 
+const GMAIL_USER = (process.env.GMAIL_USER || '').trim();
+const GMAIL_APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+
+const gmailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: GMAIL_USER,
+        pass: GMAIL_APP_PASSWORD
+      }
+    })
+  : null;
+
 async function dispatchResendEmail({ to, subject, html, eventTitle, color, source }) {
-  const recipients = (Array.isArray(to) ? to : String(to || '').split(','))
-    .map(x => String(x || '').replace(/^.*<|>$/g, '').trim().toLowerCase())
-    .filter(x => x.includes('@'));
+  const recipients = Array.isArray(to)
+    ? Array.from(new Set(to.map(x => String(x || '').trim().toLowerCase()).filter(Boolean)))
+    : String(to || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
 
   if (!recipients.length) {
-    throw new Error('Nessun destinatario email valido');
+    throw new Error('Nessun destinatario valido');
+  }
+  if (!gmailTransporter) {
+    throw new Error('Configura GMAIL_USER e GMAIL_APP_PASSWORD nelle Environment Variables');
   }
 
-  recipients.forEach(em => upsertUser(em));
-
-  const resp = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${RESEND_API_KEY}`
-    },
-    body: JSON.stringify({
-      from: BOT_FROM,
-      to: recipients,
-      subject,
-      html
-    })
-  });
-
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    const errMsg = data?.message || data?.error || `Resend HTTP ${resp.status}`;
-    recordSentEmail({
-      to: recipients.join(', '),
-      subject,
-      eventTitle,
-      color,
-      source: source || 'bot',
-      status: 'errore',
-      error: errMsg
-    });
-    saveState();
-    throw new Error(errMsg);
-  }
-
-  recordSentEmail({
+  const info = await gmailTransporter.sendMail({
+    from: "UfficioCal Bot" <>,
     to: recipients.join(', '),
-    subject,
-    eventTitle,
-    color,
-    source: source || 'bot',
-    status: 'inviata'
+    subject: subject || Avviso UfficioCal: ,
+    html: html || <p>Notifica per l'impegno <strong></strong>.</p>
   });
+
+  const record = {
+    id: 'mail_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    to: recipients,
+    subject: subject || Avviso UfficioCal: ,
+    eventTitle: eventTitle || 'Impegno',
+    color: color || '#3b82f6',
+    source: source || 'bot-alert',
+    sentAt: new Date().toISOString(),
+    messageId: info.messageId || null
+  };
+
+  state.sentEmails = [record, ...(state.sentEmails || [])].slice(0, 200);
   saveState();
-  return data;
+  return record;
 }
 
 app.post('/api/register-user', (req, res) => {
@@ -225,6 +221,14 @@ app.post('/api/register-user', (req, res) => {
   }
   saveState();
   res.json({ ok: true, user, users: state.users });
+});
+
+app.delete('/api/events/:id', (req, res) => {
+  const id = String(req.params.id || '');
+  state.deletedEventIds = Array.from(new Set([...(state.deletedEventIds || []), id]));
+  state.events = (state.events || []).filter(e => String(e.id) !== id);
+  saveState();
+  res.json({ ok: true, events: state.events });
 });
 
 app.get('/api/state', (req, res) => {
@@ -242,7 +246,7 @@ app.post('/api/state', (req, res) => {
     });
   }
   if (Array.isArray(events) && events.length > 0) {
-    state.events = mergeEvents(state.events, events);
+    const delSet = new Set((state.deletedEventIds || []).map(String)); state.events = mergeEvents(state.events, events).filter(e => !delSet.has(String(e.id)));
   }
   if (Array.isArray(sentEmails) && sentEmails.length > 0) {
     state.sentEmails = [...sentEmails, ...(state.sentEmails || [])];
