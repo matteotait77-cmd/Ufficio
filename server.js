@@ -120,6 +120,7 @@ async function restoreStateFromCloud() {
 }
 
 function saveStateLocalOnly() {
+  purgeDeletedEventsFromState();
   ensureDataDir();
   const disk = readDiskState();
 
@@ -294,19 +295,6 @@ app.put('/api/events/:id', (req, res) => {
   res.json({ ok: true, event: updatedEvent, events: state.events });
 });
 
-function purgeDeletedEventsFromState() {
-  if (!state || typeof state !== 'object') return;
-  if (!Array.isArray(state.events)) state.events = [];
-  if (!Array.isArray(state.deletedEventIds)) state.deletedEventIds = [];
-  const deletedSet = new Set(state.deletedEventIds.map(x => String(x).trim()).filter(Boolean));
-  if (deletedSet.size > 0) {
-    state.events = state.events.filter(ev => {
-      const evId = String((ev && (ev.id ?? ev._id)) ?? '').trim();
-      return !evId || !deletedSet.has(evId);
-    });
-  }
-}
-
 function handleDeleteEventById(rawId, res) {
   const id = String(rawId || '').trim();
   if (!id) {
@@ -342,11 +330,26 @@ app.post('/api/events/delete', (req, res) => {
   return handleDeleteEventById(id, res);
 });
 
+function purgeDeletedEventsFromState() {
+  if (!state || typeof state !== 'object') return;
+  if (!Array.isArray(state.events)) state.events = [];
+  if (!Array.isArray(state.deletedEventIds)) state.deletedEventIds = [];
+  const deletedSet = new Set(state.deletedEventIds.map(x => String(x).trim()).filter(Boolean));
+  if (deletedSet.size > 0) {
+    state.events = state.events.filter(ev => {
+      const evId = String((ev && (ev.id ?? ev._id)) ?? '').trim();
+      return !evId || !deletedSet.has(evId);
+    });
+  }
+}
+
 app.get('/api/state', (req, res) => {
+  purgeDeletedEventsFromState();
   res.json(state);
 });
 
 app.post('/api/state', (req, res) => {
+  purgeDeletedEventsFromState();
   const { users, events, sentEmails, activeUser } = req.body || {};
   if (activeUser && activeUser.email) {
     upsertUser(activeUser.email, activeUser.name);

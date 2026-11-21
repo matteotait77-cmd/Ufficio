@@ -993,8 +993,8 @@
 <!-- UFFICIO_DAY_PANEL_START -->
 <script>
 (function () {
-  if (window.__ufficioPanelV3) return;
-  window.__ufficioPanelV3 = true;
+  if (window.__ufficioPanelV4) return;
+  window.__ufficioPanelV4 = true;
 
   let activeDate = null;
 
@@ -1054,8 +1054,8 @@
     return iso(year, month, day);
   }
 
-  function removeMatchingBadgeFromDom(ev) {
-    const title = String((ev && ev.title) || '').trim().toLowerCase();
+  function removeBadgeFromCalendar(ev) {
+    const t = String((ev && ev.title) || '').trim().toLowerCase();
     const s = String((ev && ev.startTime) || '').trim();
     const e = String((ev && ev.endTime) || '').trim();
     const compact = (s && e) ? `${s}-${e}` : '';
@@ -1064,21 +1064,30 @@
     document.querySelectorAll('span, div, button, a, p, small').forEach(el => {
       if (!el || !el.parentNode) return;
       if (el.id === 'ufficio-panel-clean' || (el.closest && el.closest('#ufficio-panel-clean'))) return;
-      if (el.children && el.children.length > 0) return;
-      const raw = (el.textContent || '').replace(/\s+/g, ' ').trim();
-      if (!raw || raw.length > 80) return;
+      const raw = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!raw || raw.length > 70) return;
       const low = raw.toLowerCase();
-      const matchTitle = title && low.includes(title);
-      const matchTime = (compact && raw.includes(compact)) || (spaced && raw.includes(spaced));
-      if ((matchTitle && matchTime) || (title && low === title)) {
+      const hasTitle = t ? low.includes(t) : false;
+      const hasRange = (compact && raw.includes(compact)) || (spaced && raw.includes(spaced));
+      if ((hasTitle && hasRange) || (t && low === t)) {
+        if (el.children && el.children.length > 0) {
+          const inner = Array.from(el.querySelectorAll('span, div, button, a, small, p')).filter(ch => {
+            const cTxt = (ch.innerText || ch.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            return cTxt && ((t && cTxt.includes(t)) || (compact && cTxt.includes(compact)) || (spaced && cTxt.includes(spaced)));
+          });
+          if (inner.length > 0) {
+            inner.forEach(x => x.remove());
+            return;
+          }
+        }
         el.remove();
       }
     });
   }
 
-  async function requestDeleteEvent(evId) {
-    const encoded = encodeURIComponent(String(evId));
-    let resp = await fetch(`/api/events/${encoded}`, { method: 'DELETE', cache: 'no-store' });
+  async function deleteEventApi(evId) {
+    const enc = encodeURIComponent(String(evId));
+    let resp = await fetch(`/api/events/${enc}`, { method: 'DELETE', cache: 'no-store' });
     let data = await resp.json().catch(() => ({}));
     if (!resp.ok || !data.ok) {
       resp = await fetch('/api/events/delete', {
@@ -1160,9 +1169,9 @@
           bDel.disabled = true;
           bDel.textContent = '...';
           try {
-            const { resp, data } = await requestDeleteEvent(ev.id);
+            const { resp, data } = await deleteEventApi(ev.id);
             if (resp.ok && data.ok) {
-              removeMatchingBadgeFromDom(ev);
+              removeBadgeFromCalendar(ev);
               syncAppViews(data.events);
               await openDay(activeDate, 'Impegno eliminato.', false);
             } else {
