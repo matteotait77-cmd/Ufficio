@@ -164,11 +164,14 @@ function recordSentEmail(entry) {
   });
   state.sentEmails = state.sentEmails.slice(0, 200);
 }
-
-const GMAIL_USER = (process.env.GMAIL_USER || '').trim();
-const GMAIL_APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
-
-const gmailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: GMAIL_USER,
+        pass: GMAIL_APP_PASSWORD
+      }
+    })
+  : null;
   ? nodemailer.createTransport({
       service: 'gmail',
       auth: {
