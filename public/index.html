@@ -1117,14 +1117,19 @@
     if (Array.isArray(eventsArr)) {
       window.events = eventsArr;
     }
-    if (typeof window.renderDashboard === 'function') window.renderDashboard();
-    if (typeof window.renderCalendar === 'function') window.renderCalendar();
-    if (typeof window.renderEvents === 'function') window.renderEvents();
-    if (typeof window.renderAll === 'function') window.renderAll();
-
-    // Forza il ricalcolo/ridisegno della griglia se esposta o tramite evento custom
     try {
-      window.dispatchEvent(new CustomEvent('ufficiocal:events-updated', { detail: { events: eventsArr || [] } }));
+      const grid = document.getElementById('calGrid');
+      const btns = Array.from(document.querySelectorAll('button')).filter(b => {
+        if (b.closest && b.closest('#ufficio-panel-clean')) return false;
+        const t = (b.innerText || b.textContent || '').trim();
+        return ['<', '>', '‹', '›', '←', '→', 'Oggi', 'Mese', 'Settimana'].includes(t);
+      });
+      const prevBtn = btns.find(b => ['<', '‹', '←'].includes((b.innerText || b.textContent || '').trim()));
+      const nextBtn = btns.find(b => ['>', '›', '→'].includes((b.innerText || b.textContent || '').trim()));
+      if (grid && prevBtn && nextBtn) {
+        nextBtn.click();
+        setTimeout(() => prevBtn.click(), 60);
+      }
     } catch (_) {}
   }
 
