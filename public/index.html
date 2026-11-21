@@ -965,148 +965,161 @@
   </script>
 <script>
 (function() {
-  window.deleteEventFromServer = async function(eventId) {
-    if (!eventId) return false;
-    try {
-      const res = await fetch('/api/events/' + encodeURIComponent(String(eventId)), { method: 'DELETE' });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok) {
-        if (Array.isArray(window.events)) {
-          window.events = window.events.filter(ev => String(ev.id) !== String(eventId));
-        }
-        if (typeof window.renderCalendar === 'function') window.renderCalendar();
-        if (typeof window.renderEvents === 'function') window.renderEvents();
-        if (typeof window.renderAll === 'function') window.renderAll();
-        return true;
-      }
-    } catch (err) {
-      console.error('Errore eliminazione evento:', err);
-    }
-    return false;
-  };
+  let currentTargetEventId = null;
+  let currentTargetLabel = '';
 
-  document.addEventListener('click', function(e) {
-    const btn = e.target.closest('button, a');
-    if (!btn) return;
-    const label = (btn.textContent || '').trim().toLowerCase();
-    if (label === 'elimina' || label === 'elimina impegno' || btn.dataset.deleteEventId) {
-      const evId = btn.dataset.deleteEventId
-        || btn.getAttribute('data-id')
-        || (window.selectedEvent && window.selectedEvent.id)
-        || (window.editingEvent && window.editingEvent.id)
-        || (window.currentEvent && window.currentEvent.id);
-      if (evId) {
-        window.deleteEventFromServer(evId);
-      }
-    }
-  }, true);
-})();
-</script>
-<script>
-(function() {
-  let activeEventId = null;
+  const bar = document.createElement('div');
+  bar.id = 'ufficiocal-delete-bar';
+  bar.style.cssText = [
+    'position:fixed',
+    'left:20px',
+    'bottom:20px',
+    'z-index:9999',
+    'display:none',
+    'align-items:center',
+    'gap:10px',
+    'padding:10px 14px',
+    'border-radius:12px',
+    'background:#0f172a',
+    'border:1px solid rgba(148,163,184,0.35)',
+    'color:#f8fafc',
+    'font-family:Segoe UI,Arial,sans-serif',
+    'font-size:13px',
+    'box-shadow:0 10px 25px rgba(0,0,0,0.45)'
+  ].join(';');
 
-  function findEventIdFromElement(el) {
-    if (!el) return null;
-    const attrs = ['data-event-id', 'data-id', 'data-evento-id', 'data-item-id'];
-    let cur = el;
+  const infoSpan = document.createElement('span');
+  infoSpan.id = 'ufficiocal-delete-label';
+  infoSpan.style.maxWidth = '260px';
+  infoSpan.style.overflow = 'hidden';
+  infoSpan.style.textOverflow = 'ellipsis';
+  infoSpan.style.whiteSpace = 'nowrap';
+
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.id = 'ufficiocal-delete-btn';
+  delBtn.textContent = 'Elimina impegno';
+  delBtn.style.cssText = [
+    'background:#dc2626',
+    'color:#ffffff',
+    'border:none',
+    'border-radius:8px',
+    'padding:7px 12px',
+    'font-weight:600',
+    'cursor:pointer'
+  ].join(';');
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.textContent = '✕';
+  closeBtn.title = 'Chiudi';
+  closeBtn.style.cssText = [
+    'background:transparent',
+    'color:#94a3b8',
+    'border:none',
+    'font-size:15px',
+    'cursor:pointer',
+    'padding:2px 6px'
+  ].join(';');
+
+  bar.appendChild(infoSpan);
+  bar.appendChild(delBtn);
+  bar.appendChild(closeBtn);
+  document.body.appendChild(bar);
+
+  function showDeleteBar(id, label) {
+    if (!id) return;
+    currentTargetEventId = String(id);
+    currentTargetLabel = String(label || id);
+    infoSpan.textContent = 'Impegno: ' + currentTargetLabel;
+    bar.style.display = 'flex';
+  }
+
+  function hideDeleteBar() {
+    currentTargetEventId = null;
+    currentTargetLabel = '';
+    bar.style.display = 'none';
+  }
+
+  closeBtn.addEventListener('click', hideDeleteBar);
+
+  function resolveEventFromClick(target) {
+    if (!target) return null;
+    let cur = target;
     for (let i = 0; i < 6 && cur; i++) {
-      for (const a of attrs) {
-        const val = cur.getAttribute && cur.getAttribute(a);
-        if (val) return String(val);
-      }
-      if (cur.dataset && (cur.dataset.eventId || cur.dataset.id)) {
-        return String(cur.dataset.eventId || cur.dataset.id);
+      const attrId = cur.getAttribute && (cur.getAttribute('data-event-id') || cur.getAttribute('data-id') || cur.getAttribute('data-evento-id'));
+      if (attrId) {
+        return { id: String(attrId), title: (cur.innerText || cur.textContent || '').trim() };
       }
       cur = cur.parentElement;
+    }
+
+    const text = (target.innerText || target.textContent || '').trim();
+    if (!text) return null;
+
+    if (Array.isArray(window.events)) {
+      const byTitle = window.events.find(ev => ev && ev.title && text.includes(String(ev.title).trim()));
+      if (byTitle) return { id: String(byTitle.id), title: byTitle.title };
+    }
+
+    // Fallback se l'utente clicca sul badge dell'impegno nella cella del calendario (es. "09:00-10:00 g")
+    if (/\d{2}:\d{2}/.test(text) && text.length < 60) {
+      return { id: 'TEXT:' + text, title: text };
     }
     return null;
   }
 
-  function guessEventIdFromText(el) {
-    if (!el || !Array.isArray(window.events)) return null;
-    const rawText = (el.innerText || el.textContent || '').trim();
-    if (!rawText) return null;
-    const found = window.events.find(ev => {
-      if (!ev || !ev.title) return false;
-      return rawText.includes(String(ev.title).trim());
-    });
-    return found ? String(found.id) : null;
-  }
-
-  window.deleteEventFromServer = async function(eventId) {
-    const id = String(eventId || activeEventId || '').trim();
-    if (!id) {
-      alert('Seleziona prima un impegno da eliminare.');
-      return false;
-    }
+  async function performDelete() {
+    if (!currentTargetEventId) return;
+    delBtn.disabled = true;
+    delBtn.textContent = 'Elimino...';
     try {
-      const res = await fetch('/api/events/' + encodeURIComponent(id), { method: 'DELETE' });
+      let targetId = currentTargetEventId;
+      if (targetId.startsWith('TEXT:')) {
+        const needle = targetId.slice(5).trim();
+        const stRes = await fetch('/api/state');
+        const stData = await stRes.json().catch(() => ({}));
+        const list = Array.isArray(stData.events) ? stData.events : [];
+        const matched = list.find(ev => {
+          const combined = `${ev.startTime || ''}-${ev.endTime || ''} ${ev.title || ''}`.trim();
+          return combined.includes(needle) || needle.includes(String(ev.title || '').trim());
+        });
+        if (matched && matched.id) {
+          targetId = String(matched.id);
+        }
+      }
+
+      const res = await fetch('/api/events/' + encodeURIComponent(targetId), { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
         if (Array.isArray(data.events)) {
           window.events = data.events;
-        } else if (Array.isArray(window.events)) {
-          window.events = window.events.filter(ev => String(ev.id) !== id);
         }
-        try {
-          for (const k of Object.keys(localStorage)) {
-            const val = localStorage.getItem(k);
-            if (!val || !val.includes(id)) continue;
-            try {
-              const parsed = JSON.parse(val);
-              if (Array.isArray(parsed.events)) {
-                parsed.events = parsed.events.filter(ev => String(ev.id) !== id);
-                localStorage.setItem(k, JSON.stringify(parsed));
-              } else if (Array.isArray(parsed)) {
-                const filtered = parsed.filter(ev => !(ev && String(ev.id) === id));
-                if (filtered.length !== parsed.length) {
-                  localStorage.setItem(k, JSON.stringify(filtered));
-                }
-              }
-            } catch (_) {}
-          }
-        } catch (_) {}
-
-        activeEventId = null;
+        hideDeleteBar();
         if (typeof window.renderCalendar === 'function') window.renderCalendar();
         if (typeof window.renderEvents === 'function') window.renderEvents();
         if (typeof window.renderAll === 'function') window.renderAll();
         if (typeof window.loadState === 'function') window.loadState();
-        return true;
+        location.reload();
       } else {
-        alert('Errore durante l\'eliminazione dell\'impegno sul server.');
+        alert('Impossibile eliminare l\'impegno sul server.');
       }
     } catch (err) {
-      console.error('Errore eliminazione evento:', err);
-      alert('Errore di rete durante l\'eliminazione.');
+      console.error(err);
+      alert('Errore durante l\'eliminazione.');
+    } finally {
+      delBtn.disabled = false;
+      delBtn.textContent = 'Elimina impegno';
     }
-    return false;
-  };
+  }
 
-  // Traccia l'ultimo impegno cliccato o aperto
+  delBtn.addEventListener('click', performDelete);
+
   document.addEventListener('click', function(e) {
-    const btn = e.target.closest('button, a, [role="button"]');
-    if (btn) {
-      const label = (btn.textContent || '').trim().toLowerCase();
-      if (label.includes('elimina') || label.includes('cancella') || label.includes('rimuovi')) {
-        const idFromBtn = findEventIdFromElement(btn)
-          || (window.selectedEvent && window.selectedEvent.id)
-          || (window.editingEvent && window.editingEvent.id)
-          || (window.currentEvent && window.currentEvent.id)
-          || activeEventId;
-        if (idFromBtn) {
-          e.preventDefault();
-          e.stopPropagation();
-          window.deleteEventFromServer(idFromBtn);
-          return;
-        }
-      }
-    }
-
-    const clickedId = findEventIdFromElement(e.target) || guessEventIdFromText(e.target.closest('div, li, tr, article, section'));
-    if (clickedId) {
-      activeEventId = clickedId;
+    if (bar.contains(e.target)) return;
+    const hit = resolveEventFromClick(e.target);
+    if (hit && hit.id) {
+      showDeleteBar(hit.id, hit.title);
     }
   }, true);
 })();
