@@ -23,17 +23,27 @@
       color: var(--text);
       min-height: 100vh;
     }
-    .screen { display: none; }
-    .screen.active { display: block; }
 
-    /* Login */
-    #loginScreen.active {
-      min-height: 100vh;
+    /* Login sempre visibile finché non si entra */
+    section#loginScreen {
+      display: none;
+    }
+    section#loginScreen.active {
       display: flex;
+      min-height: 100vh;
       align-items: center;
       justify-content: center;
       padding: 20px;
+      background: var(--bg);
     }
+
+    section#appScreen {
+      display: none;
+    }
+    section#appScreen.active {
+      display: block;
+    }
+
     .login-card {
       width: 100%;
       max-width: 440px;
@@ -57,7 +67,6 @@
       font-size: 0.9rem;
     }
 
-    /* App */
     .topbar {
       display: flex;
       flex-wrap: wrap;
@@ -202,7 +211,7 @@
     }
 
     .picker-box {
-      max-height: 110px;
+      max-height: 105px;
       overflow-y: auto;
       background: var(--card-2);
       border: 1px solid var(--border);
@@ -211,6 +220,24 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
+    }
+
+    .alerts-box {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      background: var(--card-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      margin-top: 6px;
+    }
+    .alert-row {
+      display: grid;
+      grid-template-columns: 64px 1fr 1fr;
+      gap: 6px;
+      align-items: center;
+      font-size: 0.78rem;
     }
 
     .mail-log {
@@ -229,7 +256,6 @@
       border-radius: 7px;
     }
 
-    /* Modale Impegno */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -244,7 +270,7 @@
     .modal-backdrop.open { display: flex; }
     .modal-box {
       width: 100%;
-      max-width: 500px;
+      max-width: 520px;
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 14px;
@@ -315,7 +341,7 @@
 <body>
 
   <!-- LOGIN -->
-  <section id="loginScreen" class="screen active">
+  <section id="loginScreen" class="active">
     <div class="login-card">
       <h1>UfficioCal</h1>
       <p>Registrazione e accesso condiviso: ogni persona resta salvata con il proprio profilo e riceve gli alert configurati.</p>
@@ -338,7 +364,7 @@
   </section>
 
   <!-- APP -->
-  <section id="appScreen" class="screen">
+  <section id="appScreen">
     <header class="topbar">
       <div class="topbar-left">
         <h2 id="welcomeTitle">UfficioCal</h2>
@@ -451,20 +477,10 @@
           </div>
         </div>
 
-        <div class="row-2">
-          <div class="field">
-            <label for="evAlertDate">Data alert</label>
-            <input id="evAlertDate" type="date" required />
-          </div>
-          <div class="field">
-            <label for="evAlertTime">Ora alert</label>
-            <input id="evAlertTime" type="time" value="08:45" required />
-          </div>
-        </div>
-
         <div class="field">
           <label for="evAlertCount">Numero di alert (da 1 a 10)</label>
           <select id="evAlertCount"></select>
+          <div id="alertScheduleRows" class="alerts-box"></div>
         </div>
 
         <div class="field">
@@ -484,7 +500,7 @@
         <div class="field">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
             <input id="evSendEmailNow" type="checkbox" style="width:auto;" />
-            <span>Invia subito una mail di conferma (oltre all'alert alla data e ora impostate)</span>
+            <span>Invia subito una mail di conferma (oltre agli alert alle date e ore impostate)</span>
           </label>
         </div>
 
@@ -500,7 +516,7 @@
 
   <script>
     const SHARED_PASS = 'ufficio2026';
-    const SESSION_KEY = 'ufficiocal_user_v2';
+    const SESSION_KEY = 'ufficiocal_user_v3';
     const $ = id => document.getElementById(id);
 
     const state = {
@@ -525,6 +541,62 @@
       const day = String(d.getDate()).padStart(2, '0');
       return `${y}-${m}-${day}`;
     }
+
+    function addMinutesToTime(timeStr, minsToAdd) {
+      const parts = String(timeStr || '09:00').split(':');
+      const h = Number(parts[0] || 9);
+      const m = Number(parts[1] || 0);
+      const total = ((h * 60 + m + minsToAdd) % 1440 + 1440) % 1440;
+      return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+    }
+
+    function renderAlertRows(count, existingAlerts = []) {
+      const box = $('alertScheduleRows');
+      const nCount = Math.max(1, Math.min(10, Number(count || 1)));
+      const defDate = $('evDate').value || toIso(new Date());
+      const defStart = $('evStart').value || '09:00';
+      box.innerHTML = '';
+
+      for (let i = 0; i < nCount; i++) {
+        const ex = existingAlerts[i] || {};
+        const row = document.createElement('div');
+        row.className = 'alert-row';
+
+        const lbl = document.createElement('span');
+        lbl.style.fontWeight = '700';
+        lbl.textContent = `Alert #${i + 1}`;
+
+        const dInp = document.createElement('input');
+        dInp.type = 'date';
+        dInp.className = 'al-date';
+        dInp.value = ex.date || defDate;
+
+        const tInp = document.createElement('input');
+        tInp.type = 'time';
+        tInp.className = 'al-time';
+        tInp.value = ex.time || addMinutesToTime(defStart, -15 * (nCount - i));
+
+        row.appendChild(lbl);
+        row.appendChild(dInp);
+        row.appendChild(tInp);
+        box.appendChild(row);
+      }
+    }
+
+    function collectAlertsFromForm() {
+      const dates = Array.from(document.querySelectorAll('.al-date')).map(i => i.value);
+      const times = Array.from(document.querySelectorAll('.al-time')).map(i => i.value);
+      return dates.map((d, idx) => ({
+        index: idx + 1,
+        date: d || $('evDate').value || toIso(new Date()),
+        time: times[idx] || $('evStart').value || '09:00',
+        sentAt: null
+      }));
+    }
+
+    $('evAlertCount').addEventListener('change', () => {
+      renderAlertRows($('evAlertCount').value, collectAlertsFromForm());
+    });
 
     function saveSession() {
       try {
@@ -651,19 +723,21 @@
       $('evDate').value = dStr;
       $('evStart').value = '09:00';
       $('evEnd').value = '10:00';
-      $('evAlertDate').value = dStr;
-      $('evAlertTime').value = '08:45';
       $('evAlertCount').value = '1';
       $('evSendEmailNow').checked = false;
       $('eventFormStatus').textContent = '';
       const allRadio = document.querySelector('input[name="evRecMode"][value="all"]');
       if (allRadio) allRadio.checked = true;
+      renderAlertRows(1, [{ date: dStr, time: '08:45' }]);
       renderRecipientPicker([], 'all');
       $('eventModal').classList.add('open');
     }
 
     function openEditModal(ev) {
       const mode = ev.recipientMode === 'selected' ? 'selected' : 'all';
+      const existingAlerts = Array.isArray(ev.alerts) && ev.alerts.length
+        ? ev.alerts
+        : [{ date: ev.alertDate || ev.date, time: ev.alertTime || ev.startTime }];
       $('evEditId').value = ev.id;
       $('eventModalTitle').textContent = 'Modifica impegno & Alert';
       $('saveEventBtn').textContent = 'Aggiorna impegno';
@@ -672,14 +746,13 @@
       $('evDate').value = ev.date || toIso(new Date());
       $('evStart').value = ev.startTime || '09:00';
       $('evEnd').value = ev.endTime || '10:00';
-      $('evAlertDate').value = ev.alertDate || ev.date || toIso(new Date());
-      $('evAlertTime').value = ev.alertTime || ev.startTime || '08:45';
-      $('evAlertCount').value = String(ev.alertCount || 1);
+      $('evAlertCount').value = String(existingAlerts.length);
       $('evExtraEmails').value = '';
       $('evSendEmailNow').checked = false;
       $('eventFormStatus').textContent = '';
       const mRadio = document.querySelector(`input[name="evRecMode"][value="${mode}"]`);
       if (mRadio) mRadio.checked = true;
+      renderAlertRows(existingAlerts.length, existingAlerts);
       renderRecipientPicker(Array.isArray(ev.emails) ? ev.emails : [], mode);
       $('eventModal').classList.add('open');
     }
@@ -809,8 +882,10 @@
         row.className = 'event-item';
 
         const info = document.createElement('div');
-        const alertInfo = ev.alertDate ? ` · Alert ${ev.alertDate} ${ev.alertTime || ''}` : '';
-        info.innerHTML = `<div class="event-item-title">${ev.title || 'Impegno'}</div><div class="event-item-meta">${ev.date || ''} · ${ev.startTime || ''}-${ev.endTime || ''}${alertInfo}</div>`;
+        const alList = Array.isArray(ev.alerts) && ev.alerts.length
+          ? ev.alerts.map(a => `${a.date} ${a.time}`).join(', ')
+          : (ev.alertDate ? `${ev.alertDate} ${ev.alertTime || ''}` : '');
+        info.innerHTML = `<div class="event-item-title">${ev.title || 'Impegno'}</div><div class="event-item-meta">${ev.date || ''} · ${ev.startTime || ''}-${ev.endTime || ''}${alList ? ' · Alert: ' + alList : ''}</div>`;
 
         const actions = document.createElement('div');
         actions.className = 'event-actions';
@@ -915,6 +990,8 @@
       const editId = String($('evEditId').value || '').trim();
       const recipientMode = getRecipientMode();
       const emails = collectSelectedEmails();
+      const alerts = collectAlertsFromForm();
+
       const payload = {
         id: editId || ('ev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
         title: $('evTitle').value.trim(),
@@ -922,9 +999,10 @@
         startTime: $('evStart').value,
         endTime: $('evEnd').value,
         color: $('evColor').value,
-        alertDate: $('evAlertDate').value || $('evDate').value,
-        alertTime: $('evAlertTime').value || $('evStart').value,
-        alertCount: Number($('evAlertCount').value || 1),
+        alertDate: alerts[0]?.date || $('evDate').value,
+        alertTime: alerts[0]?.time || $('evStart').value,
+        alertCount: alerts.length,
+        alerts,
         recipientMode,
         emails,
         createdBy: state.user?.email || ''
@@ -954,7 +1032,7 @@
               recipientMode,
               subject: `${editId ? 'Aggiornamento impegno' : 'Nuovo impegno'}: ${payload.title}`,
               eventTitle: payload.title,
-              html: `<p><strong>${payload.title}</strong> — Data: ${payload.date} (${payload.startTime} - ${payload.endTime})</p><p>Alert programmato: ${payload.alertDate} alle ${payload.alertTime} (${payload.alertCount} alert)</p>`
+              html: `<p><strong>${payload.title}</strong> — Data: ${payload.date} (${payload.startTime} - ${payload.endTime})</p><p>Alert impostati: ${alerts.map(a => a.date + ' ' + a.time).join(', ')}</p>`
             })
           }).catch(() => null);
           const mailJson = mailResp ? await mailResp.json().catch(() => ({})) : {};
@@ -1046,7 +1124,7 @@
     loadSession();
     syncScreen();
     fetchServerState();
-    setInterval(fetchServerState, 30000);
+    setInterval(fetchServerState, 15000);
   </script>
 </body>
 </html>

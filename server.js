@@ -188,10 +188,33 @@ async function sendMailNow({ to, subject, html, text, eventTitle }) {
   return { ok: true, record, sentEmails: state.sentEmails };
 }
 
-function parseAlertTimestamp(ev) {
-  if (!ev || !ev.alertDate || !ev.alertTime) return null;
-  const isoCandidate = `${String(ev.alertDate).trim()}T${String(ev.alertTime).trim()}`;
-  const ts = Date.parse(isoCandidate);
+function normalizeAlerts(ev) {
+  if (Array.isArray(ev.alerts) && ev.alerts.length) {
+    return ev.alerts.map((a, idx) => ({
+      index: idx + 1,
+      date: String((a && a.date) || ev.date || '').trim(),
+      time: String((a && a.time) || ev.startTime || '09:00').trim(),
+      sentAt: a && a.sentAt ? a.sentAt : null
+    }));
+  }
+  const count = Math.max(1, Math.min(10, Number(ev.alertCount || 1)));
+  const baseDate = String(ev.alertDate || ev.date || '').trim();
+  const baseTime = String(ev.alertTime || ev.startTime || '09:00').trim();
+  const arr = [];
+  for (let i = 0; i < count; i++) {
+    arr.push({
+      index: i + 1,
+      date: baseDate,
+      time: baseTime,
+      sentAt: i === 0 && ev.alertSentAt ? ev.alertSentAt : null
+    });
+  }
+  return arr;
+}
+
+function parseAlertTs(dateStr, timeStr) {
+  if (!dateStr || !timeStr) return null;
+  const ts = Date.parse(`${String(dateStr).trim()}T${String(timeStr).trim()}`);
   return Number.isNaN(ts) ? null : ts;
 }
 
@@ -202,25 +225,27 @@ async function checkScheduledAlerts() {
   let changed = false;
 
   for (const ev of state.events) {
-    if (!ev || ev.alertSentAt) continue;
-    const alertTs = parseAlertTimestamp(ev);
-    if (alertTs !== null && alertTs <= nowTs) {
-      const recipients = resolveRecipients(ev);
-      if (recipients.length && gmailTransporter) {
-        try {
-          await sendMailNow({
-            to: recipients,
-            subject: `Alert UfficioCal: ${ev.title || 'Impegno'}`,
-            eventTitle: ev.title,
-            html: `<p><strong>Promemoria / Alert impegno:</strong> ${ev.title || 'Impegno'}</p><p>Data impegno: <strong>${ev.date || ''}</strong> (${ev.startTime || ''} - ${ev.endTime || ''})</p><p>Alert programmato: ${ev.alertDate} alle ${ev.alertTime}</p>`
-          });
-          ev.alertSentAt = new Date().toISOString();
-          changed = true;
-        } catch (err) {
-          console.error('Errore invio alert programmato:', err.message);
+    if (!ev) continue;
+    ev.alerts = normalizeAlerts(ev);
+    const recipients = resolveRecipients(ev);
+
+    for (const al of ev.alerts) {
+      if (al.sentAt) continue;
+      const alTs = parseAlertTs(al.date, al.time);
+      if (alTs !== null && alTs <= nowTs) {
+        if (recipients.length && gmailTransporter) {
+          try {
+            await sendMailNow({
+              to: recipients,
+              subject: `Alert #${al.index} UfficioCal: ${ev.title || 'Impegno'}`,
+              eventTitle: ev.title,
+              html: `<p><strong>Alert #${al.index} per l'impegno:</strong> ${ev.title || 'Impegno'}</p><p>Data impegno: <strong>${ev.date || ''}</strong> (${ev.startTime || ''} - ${ev.endTime || ''})</p><p>Orario alert impostato: <strong>${al.date} alle ${al.time}</strong></p>`
+            });
+          } catch (err) {
+            console.error('Errore invio alert:', err.message);
+          }
         }
-      } else {
-        ev.alertSentAt = new Date().toISOString();
+        al.sentAt = new Date().toISOString();
         changed = true;
       }
     }
@@ -281,6 +306,7 @@ app.post('/api/state', (req, res) => {
 app.post('/api/events', (req, res) => {
   const ev = req.body || {};
   const id = String(ev.id || ('ev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7))).trim();
+  const alerts = normalizeAlerts(ev);
   const newEv = {
     id,
     title: String(ev.title || 'Impegno').trim(),
@@ -288,18 +314,19 @@ app.post('/api/events', (req, res) => {
     startTime: String(ev.startTime || '09:00').trim(),
     endTime: String(ev.endTime || '10:00').trim(),
     color: String(ev.color || 'blue').trim(),
-    alertDate: String(ev.alertDate || ev.date || '').trim(),
-    alertTime: String(ev.alertTime || ev.startTime || '09:00').trim(),
-    alertCount: Number(ev.alertCount || 1),
+    alertDate: alerts[0]?.date || String(ev.date || '').trim(),
+    alertTime: alerts[0]?.time || String(ev.startTime || '09:00').trim(),
+    alertCount: alerts.length,
+    alerts,
     recipientMode: ev.recipientMode === 'selected' ? 'selected' : 'all',
     emails: Array.isArray(ev.emails) ? ev.emails : [],
-    alertSentAt: null,
     createdBy: ev.createdBy || ''
   };
   state.deletedEventIds = (state.deletedEventIds || []).filter(x => String(x) !== id);
   state.events = [newEv, ...(Array.isArray(state.events) ? state.events : [])];
   purgeDeletedEvents();
   persistAll();
+  checkScheduledAlerts();
   res.json({ ok: true, event: newEv, events: state.events });
 });
 
@@ -309,17 +336,20 @@ app.put('/api/events/:id', (req, res) => {
   let updated = null;
   state.events = (state.events || []).map(ev => {
     if (String(ev.id) !== id) return ev;
-    const alertChanged = (patch.alertDate && patch.alertDate !== ev.alertDate) || (patch.alertTime && patch.alertTime !== ev.alertTime);
+    const merged = { ...ev, ...patch, id: ev.id };
+    const alerts = normalizeAlerts(merged);
     updated = {
-      ...ev,
-      ...patch,
-      alertSentAt: alertChanged ? null : ev.alertSentAt,
-      id: ev.id
+      ...merged,
+      alertDate: alerts[0]?.date || merged.date,
+      alertTime: alerts[0]?.time || merged.startTime,
+      alertCount: alerts.length,
+      alerts
     };
     return updated;
   });
   purgeDeletedEvents();
   persistAll();
+  checkScheduledAlerts();
   res.json({ ok: Boolean(updated), event: updated, events: state.events });
 });
 
@@ -394,7 +424,7 @@ app.get('*', (req, res) => {
 
 loadLocal();
 restoreFromCloud().then(() => checkScheduledAlerts());
-setInterval(checkScheduledAlerts, 30000);
+setInterval(checkScheduledAlerts, 15000);
 
 app.listen(PORT, () => {
   console.log(`UfficioCal attivo su http://localhost:${PORT}`);
