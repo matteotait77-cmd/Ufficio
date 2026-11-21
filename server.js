@@ -68,6 +68,57 @@ function mergeEvents(existingEvents, incomingEvents) {
   return Array.from(map.values());
 }
 
+const UPSTASH_URL = (process.env.UPSTASH_REDIS_REST_URL || '').trim().replace(/\/+$/, '');
+const UPSTASH_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
+const CLOUD_STATE_KEY = 'ufficiocal:state:v1';
+
+async function syncStateToCloud() {
+  if (!UPSTASH_URL || !UPSTASH_TOKEN) return;
+  try {
+    const keyPart = encodeURIComponent(CLOUD_STATE_KEY);
+    await fetch(`${UPSTASH_URL}/set/${keyPart}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${UPSTASH_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(state)
+    });
+  } catch (err) {
+    console.error('Errore salvataggio cloud:', err?.message || err);
+  }
+}
+
+async function restoreStateFromCloud() {
+  if (!UPSTASH_URL || !UPSTASH_TOKEN) return false;
+  try {
+    const keyPart = encodeURIComponent(CLOUD_STATE_KEY);
+    const resp = await fetch(`${UPSTASH_URL}/get/${keyPart}`, {
+      headers: { 'Authorization': `Bearer ${UPSTASH_TOKEN}` }
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (data && typeof data.result === 'string' && data.result.trim()) {
+      const parsed = JSON.parse(data.result);
+      if (parsed && typeof parsed === 'object') {
+        state = {
+          users: Array.isArray(parsed.users) ? parsed.users : [],
+          events: Array.isArray(parsed.events) ? parsed.events : [],
+          sentEmails: Array.isArray(parsed.sentEmails) ? parsed.sentEmails : [],
+          deletedEventIds: Array.isArray(parsed.deletedEventIds) ? parsed.deletedEventIds : []
+        };
+        if (typeof saveStateLocalOnly === 'function') {
+          saveStateLocalOnly();
+        }
+        console.log('Stato ripristinato dal cloud (impegni:', state.events.length, ')');
+        return true;
+      }
+    }
+  } catch (err) {
+    console.error('Errore ripristino cloud:', err?.message || err);
+  }
+  return false;
+}
+
 function saveStateLocalOnly() {
   ensureDataDir();
   const disk = readDiskState();
@@ -368,11 +419,6 @@ async function processScheduledAlerts() {
   }
 }
 
-function saveState() {
-  saveStateLocalOnly();
-  syncStateToCloud();
-}
-
 const UPSTASH_URL = (process.env.UPSTASH_REDIS_REST_URL || '').trim().replace(/\/+$/, '');
 const UPSTASH_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
 const CLOUD_STATE_KEY = 'ufficiocal:state:v1';
@@ -411,7 +457,9 @@ async function restoreStateFromCloud() {
           sentEmails: Array.isArray(parsed.sentEmails) ? parsed.sentEmails : [],
           deletedEventIds: Array.isArray(parsed.deletedEventIds) ? parsed.deletedEventIds : []
         };
-        saveStateLocalOnly();
+        if (typeof saveStateLocalOnly === 'function') {
+          saveStateLocalOnly();
+        }
         console.log('Stato ripristinato dal cloud (impegni:', state.events.length, ')');
         return true;
       }
@@ -420,6 +468,11 @@ async function restoreStateFromCloud() {
     console.error('Errore ripristino cloud:', err?.message || err);
   }
   return false;
+}
+
+function saveState() {
+  saveStateLocalOnly();
+  syncStateToCloud();
 }
 
 loadState();
