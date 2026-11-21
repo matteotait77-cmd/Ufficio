@@ -352,117 +352,7 @@
   </section>
 
   <section id="appScreen" class="screen">
-<!-- UFFICIO_DEL_POS2_START -->
-<div id="ufficio-del-wrap" style="margin:12px 0;padding:12px;border:1px solid rgba(239,68,68,0.45);border-radius:12px;background:rgba(15,23,42,0.75);">
-  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-    <strong style="font-size:0.9rem;color:#fca5a5;">Gestione rapida eliminazione impegni</strong>
-    <button id="ufficio-del-toggle" type="button" style="background:#dc2626;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:0.82rem;font-weight:700;cursor:pointer;">Mostra / Aggiorna lista impegni</button>
-  </div>
-  <div id="ufficio-del-msg" style="margin-top:8px;font-size:0.8rem;color:#fbbf24;"></div>
-  <div id="ufficio-del-items" style="margin-top:8px;display:flex;flex-direction:column;gap:8px;"></div>
-</div>
-<script>
-(function () {
-  if (window.__ufficioDelPos2) return;
-  window.__ufficioDelPos2 = true;
-
-  const toggleBtn = document.getElementById('ufficio-del-toggle');
-  const msgEl = document.getElementById('ufficio-del-msg');
-  const itemsEl = document.getElementById('ufficio-del-items');
-
-  async function reqDelete(id) {
-    const cleanId = String(id || '').trim();
-    let r = await fetch('/api/events/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      cache: 'no-store',
-      body: JSON.stringify({ id: cleanId })
-    });
-    let j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.ok) {
-      r = await fetch('/api/events/' + encodeURIComponent(cleanId), {
-        method: 'DELETE',
-        cache: 'no-store'
-      });
-      j = await r.json().catch(() => ({}));
-    }
-    return { r, j };
-  }
-
-  async function refreshList() {
-    if (!msgEl || !itemsEl) return;
-    msgEl.style.color = '#fbbf24';
-    msgEl.textContent = 'Caricamento impegni...';
-    itemsEl.innerHTML = '';
-
-    try {
-      const r = await fetch('/api/state', { cache: 'no-store' });
-      const d = await r.json().catch(() => ({}));
-      const list = Array.isArray(d.events) ? d.events : [];
-      msgEl.style.color = '#94a3b8';
-      msgEl.textContent = list.length ? `Impegni trovati: ${list.length}` : 'Nessun impegno salvato.';
-
-      list.forEach(ev => {
-        const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:8px;background:#1e293b;border:1px solid #334155;';
-
-        const left = document.createElement('div');
-        left.style.cssText = 'min-width:0;';
-        left.innerHTML = `<div style="font-weight:700;font-size:0.86rem;color:#f8fafc;">${(ev.title || '(Senza titolo)')}</div><div style="font-size:0.76rem;color:#94a3b8;">${(ev.date || '')} • ${(ev.startTime || '')}-${(ev.endTime || '')} • ID: ${(ev.id || '')}</div>`;
-
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.textContent = 'Elimina';
-        btn.style.cssText = 'background:#ef4444;color:#fff;border:none;border-radius:7px;padding:6px 11px;font-size:0.8rem;font-weight:700;cursor:pointer;flex-shrink:0;';
-
-        btn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          btn.disabled = true;
-          btn.textContent = '...';
-          msgEl.style.color = '#fbbf24';
-          msgEl.textContent = `Eliminazione di ${ev.id}...`;
-
-          try {
-            const { r: resp, j: data } = await reqDelete(ev.id);
-            if (resp.ok && data.ok) {
-              msgEl.style.color = '#4ade80';
-              msgEl.textContent = `Eliminato (${resp.status}). Aggiornamento...`;
-              await refreshList();
-            } else {
-              btn.disabled = false;
-              btn.textContent = 'Elimina';
-              msgEl.style.color = '#f87171';
-              msgEl.textContent = `Errore HTTP ${resp.status}: ${JSON.stringify(data)}`;
-            }
-          } catch (err) {
-            btn.disabled = false;
-            btn.textContent = 'Elimina';
-            msgEl.style.color = '#f87171';
-            msgEl.textContent = 'Errore: ' + (err && err.message ? err.message : err);
-          }
-        });
-
-        row.appendChild(left);
-        row.appendChild(btn);
-        itemsEl.appendChild(row);
-      });
-    } catch (err) {
-      msgEl.style.color = '#f87171';
-      msgEl.textContent = 'Errore lettura /api/state: ' + (err && err.message ? err.message : err);
-    }
-  }
-
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      refreshList();
-    });
-  }
-})();
-</script>
-<!-- UFFICIO_DEL_POS2_END -->
-    <header class="glass-card topbar">
+<header class="glass-card topbar">
       <div>
         <h2 id="welcomeTitle">UfficioCal</h2>
         <span id="userBadge" style="font-size: 0.85rem; color: var(--muted);"></span>
@@ -1102,5 +992,99 @@
   };
 })();
 </script>
+<!-- UFFICIO_ELIMINA_DIRETTO_START -->
+<script>
+(function () {
+  if (window.__ufficioEliminaDiretto) return;
+  window.__ufficioEliminaDiretto = true;
+
+  async function eliminaEventoId(id) {
+    const cleanId = String(id || '').trim();
+    if (!cleanId) return false;
+    let r = await fetch('/api/events/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({ id: cleanId })
+    });
+    let j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      r = await fetch('/api/events/' + encodeURIComponent(cleanId), {
+        method: 'DELETE',
+        cache: 'no-store'
+      });
+      j = await r.json().catch(() => ({}));
+    }
+    return Boolean(r.ok && j.ok);
+  }
+
+  function montaPulsanti() {
+    const app = document.getElementById('appScreen');
+    if (!app || document.getElementById('ufficio-btn-elimina-rapido')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'ufficio-btn-elimina-rapido';
+    btn.type = 'button';
+    btn.textContent = 'Elimina impegno';
+    btn.style.cssText = 'position:fixed;bottom:14px;right:14px;z-index:99999;background:#dc2626;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer;';
+
+    const box = document.createElement('div');
+    box.id = 'ufficio-box-elimina-rapido';
+    box.style.cssText = 'position:fixed;bottom:58px;right:14px;z-index:99999;width:320px;max-height:60vh;overflow:auto;display:none;flex-direction:column;gap:8px;background:#111827;color:#fff;border:1px solid #ef4444;border-radius:10px;padding:12px;';
+
+    app.appendChild(box);
+    app.appendChild(btn);
+
+    btn.addEventListener('click', async () => {
+      if (box.style.display === 'flex') {
+        box.style.display = 'none';
+        return;
+      }
+      box.style.display = 'flex';
+      box.innerHTML = '<div style="font-size:12px;color:#fbbf24;">Caricamento...</div>';
+      const r = await fetch('/api/state', { cache: 'no-store' });
+      const d = await r.json().catch(() => ({}));
+      const events = Array.isArray(d.events) ? d.events : [];
+      box.innerHTML = '';
+      if (!events.length) {
+        box.innerHTML = '<div style="font-size:12px;color:#9ca3af;">Nessun impegno.</div>';
+        return;
+      }
+      events.forEach(ev => {
+        const riga = document.createElement('div');
+        riga.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;background:#1f2937;padding:8px;border-radius:8px;';
+        const txt = document.createElement('span');
+        txt.style.fontSize = '12px';
+        txt.textContent = `${ev.title || 'Impegno'} (${ev.date || ''})`;
+        const bDel = document.createElement('button');
+        bDel.type = 'button';
+        bDel.textContent = 'Elimina';
+        bDel.style.cssText = 'background:#ef4444;color:#fff;border:none;border-radius:6px;padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer;';
+        bDel.addEventListener('click', async () => {
+          bDel.disabled = true;
+          bDel.textContent = '...';
+          const ok = await eliminaEventoId(ev.id);
+          if (ok) {
+            riga.remove();
+          } else {
+            bDel.disabled = false;
+            bDel.textContent = 'Elimina';
+          }
+        });
+        riga.appendChild(txt);
+        riga.appendChild(bDel);
+        box.appendChild(riga);
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', montaPulsanti);
+  } else {
+    montaPulsanti();
+  }
+})();
+</script>
+<!-- UFFICIO_ELIMINA_DIRETTO_END -->
 </body>
 </html>
