@@ -342,15 +342,48 @@ function normalizeAlerts(ev) {
 
 function parseAlertTs(dateStr, timeStr) {
   if (!dateStr || !timeStr) return null;
-  const dClean = String(dateStr).trim();
-  const tRaw = String(timeStr).trim();
-  const tParts = tRaw.split(':');
-  const hh = String(tParts[0] || '00').padStart(2, '0');
-  const mm = String(tParts[1] || '00').padStart(2, '0');
-  const ts = Date.parse(`${dClean}T${hh}:${mm}:00`);
-  return Number.isNaN(ts) ? null : ts;
-}
+  const dMatch = String(dateStr).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const tMatch = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!dMatch || !tMatch) return null;
 
+  const year = Number(dMatch[1]);
+  const month = Number(dMatch[2]);
+  const day = Number(dMatch[3]);
+  const hour = Number(tMatch[1]);
+  const minute = Number(tMatch[2]);
+
+  // Costruiamo un timestamp UTC iniziale con i valori inseriti
+  let utcMs = Date.UTC(year, month - 1, day, hour, minute, 0, 0);
+
+  // Leggiamo come viene visto quel momento in Europe/Rome per ricavare l'offset esatto
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Rome',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+
+  const parts = fmt.formatToParts(new Date(utcMs));
+  const getP = (type) => Number(parts.find(p => p.type === type)?.value || 0);
+  const romeAsUtcMs = Date.UTC(
+    getP('year'),
+    getP('month') - 1,
+    getP('day'),
+    getP('hour') === 24 ? 0 : getP('hour'),
+    getP('minute'),
+    getP('second'),
+    0
+  );
+
+  // offsetMs = (ora in Roma) - (ora UTC)
+  const offsetMs = romeAsUtcMs - utcMs;
+  // L'istante reale UTC corrispondente all'ora locale inserita è (ora locale inserita) - offsetMs
+  return utcMs - offsetMs;
+}
 async function checkScheduledAlerts() {
   purgeDeletedEvents();
   if (!Array.isArray(state.events) || !state.events.length) return;
