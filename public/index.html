@@ -1241,5 +1241,146 @@
   });
 })();
 </script>
+<!-- UFFICIO_DAY_PANEL_START -->
+<script>
+(function () {
+  if (window.__ufficioDayPanelLoaded) return;
+  window.__ufficioDayPanelLoaded = true;
+
+  let currentDate = null;
+  let eventsCache = [];
+
+  const drawer = document.createElement('div');
+  drawer.id = 'ufficio-right-drawer';
+  drawer.style.cssText = 'position:fixed;top:16px;right:16px;width:330px;max-width:92vw;max-height:82vh;overflow:auto;z-index:2147483647;display:none;flex-direction:column;gap:10px;padding:14px;border-radius:12px;background:#0b1220;color:#fff;border:1px solid #334155;box-shadow:0 12px 30px rgba(0,0,0,.6);font-family:sans-serif;';
+  drawer.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1e293b;padding-bottom:8px;">
+      <strong id="ufficio-drawer-title">Impegni</strong>
+      <button id="ufficio-drawer-x" type="button" style="background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <div id="ufficio-drawer-items" style="display:flex;flex-direction:column;gap:8px;"></div>
+    <div id="ufficio-drawer-edit" style="display:none;flex-direction:column;gap:8px;border-top:1px solid #1e293b;padding-top:8px;">
+      <input id="ufficio-ed-id" type="hidden">
+      <input id="ufficio-ed-title" type="text" placeholder="Titolo" style="padding:6px;border-radius:6px;border:1px solid #475569;background:#1e293b;color:#fff;">
+      <div style="display:flex;gap:6px;">
+        <input id="ufficio-ed-start" type="time" style="flex:1;padding:6px;border-radius:6px;border:1px solid #475569;background:#1e293b;color:#fff;">
+        <input id="ufficio-ed-end" type="time" style="flex:1;padding:6px;border-radius:6px;border:1px solid #475569;background:#1e293b;color:#fff;">
+      </div>
+      <input id="ufficio-ed-date" type="date" style="padding:6px;border-radius:6px;border:1px solid #475569;background:#1e293b;color:#fff;">
+      <div style="display:flex;gap:6px;">
+        <button id="ufficio-ed-save" type="button" style="flex:1;padding:7px;border:none;border-radius:6px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;">Salva</button>
+        <button id="ufficio-ed-cancel" type="button" style="padding:7px;border:none;border-radius:6px;background:#475569;color:#fff;cursor:pointer;">Annulla</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(drawer);
+
+  function isoDate(y, m, d) {
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+
+  function dateFromClickedEl(el) {
+    const cell = el.closest('td, [data-date], [data-day], .day, .calendar-day, div');
+    if (!cell) return null;
+    const raw = (cell.innerText || '').trim();
+    const mDay = raw.match(/\b([1-9]|[12]\d|3[01])\b/);
+    if (!mDay) return null;
+    const day = Number(mDay[1]);
+    const now = new Date();
+    let month = now.getMonth() + 1;
+    let year = now.getFullYear();
+    const months = { gennaio:1,febbraio:2,marzo:3,aprile:4,maggio:5,giugno:6,luglio:7,agosto:8,settembre:9,ottobre:10,novembre:11,dicembre:12 };
+    const top = (document.body.innerText || '').slice(0, 400).toLowerCase();
+    for (const [k, v] of Object.entries(months)) {
+      if (top.includes(k)) { month = v; break; }
+    }
+    const mYear = top.match(/\b(20\d{2})\b/);
+    if (mYear) year = Number(mYear[1]);
+    return isoDate(year, month, day);
+  }
+
+  async function loadEvents() {
+    const r = await fetch('/api/state', { cache: 'no-store' });
+    const j = await r.json().catch(() => ({}));
+    eventsCache = Array.isArray(j.events) ? j.events : [];
+    return eventsCache;
+  }
+
+  async function openDrawer(dateStr) {
+    currentDate = dateStr;
+    document.getElementById('ufficio-drawer-title').textContent = 'Impegni — ' + dateStr;
+    document.getElementById('ufficio-drawer-edit').style.display = 'none';
+    const all = await loadEvents();
+    const list = all.filter(ev => String(ev.date || '').startsWith(dateStr));
+    const box = document.getElementById('ufficio-drawer-items');
+    box.innerHTML = '';
+
+    if (!list.length) {
+      box.innerHTML = '<div style="color:#94a3b8;font-size:13px;">Nessun impegno in questo giorno.</div>';
+    } else {
+      for (const ev of list) {
+        const row = document.createElement('div');
+        row.style.cssText = 'background:#1e293b;padding:10px;border-radius:8px;display:flex;flex-direction:column;gap:6px;';
+        row.innerHTML = `
+          <div style="display:flex;justify-content:space-between;gap:8px;">
+            <span style="font-weight:700;">${ev.title || 'Senza titolo'}</span>
+            <span style="font-size:12px;color:#93c5fd;">${ev.startTime || ''} - ${ev.endTime || ''}</span>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button type="button" class="u-edit" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;">Modifica</button>
+            <button type="button" class="u-del" style="background:#dc2626;color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer;">Elimina</button>
+          </div>
+        `;
+        row.querySelector('.u-edit').onclick = () => {
+          document.getElementById('ufficio-ed-id').value = ev.id;
+          document.getElementById('ufficio-ed-title').value = ev.title || '';
+          document.getElementById('ufficio-ed-start').value = ev.startTime || '';
+          document.getElementById('ufficio-ed-end').value = ev.endTime || '';
+          document.getElementById('ufficio-ed-date').value = ev.date || dateStr;
+          document.getElementById('ufficio-drawer-edit').style.display = 'flex';
+        };
+        row.querySelector('.u-del').onclick = async () => {
+          const resp = await fetch('/api/events/' + encodeURIComponent(ev.id), { method: 'DELETE' });
+          if (resp.ok) {
+            if (typeof window.loadState === 'function') window.loadState();
+            openDrawer(currentDate);
+          }
+        };
+        box.appendChild(row);
+      }
+    }
+    drawer.style.display = 'flex';
+  }
+
+  document.getElementById('ufficio-drawer-x').onclick = () => { drawer.style.display = 'none'; };
+  document.getElementById('ufficio-ed-cancel').onclick = () => { document.getElementById('ufficio-drawer-edit').style.display = 'none'; };
+  document.getElementById('ufficio-ed-save').onclick = async () => {
+    const id = document.getElementById('ufficio-ed-id').value;
+    const body = {
+      title: document.getElementById('ufficio-ed-title').value.trim(),
+      startTime: document.getElementById('ufficio-ed-start').value,
+      endTime: document.getElementById('ufficio-ed-end').value,
+      date: document.getElementById('ufficio-ed-date').value
+    };
+    const resp = await fetch('/api/events/' + encodeURIComponent(id), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (resp.ok) {
+      if (typeof window.loadState === 'function') window.loadState();
+      openDrawer(body.date || currentDate);
+    }
+  };
+
+  document.addEventListener('click', (e) => {
+    if (drawer.contains(e.target)) return;
+    if (e.target.closest('button, input, select, textarea, a')) return;
+    const d = dateFromClickedEl(e.target);
+    if (d) openDrawer(d);
+  });
+})();
+</script>
+<!-- UFFICIO_DAY_PANEL_END -->
 </body>
 </html>
