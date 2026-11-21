@@ -273,6 +273,27 @@ app.post('/api/register-user', (req, res) => {
   res.json({ ok: true, user, users: state.users });
 });
 
+app.put('/api/events/:id', (req, res) => {
+  const id = String(req.params.id || '');
+  const patch = req.body || {};
+  const list = Array.isArray(state.events) ? state.events : [];
+  let updatedEvent = null;
+  state.events = list.map(ev => {
+    if (String(ev.id) !== id) return ev;
+    updatedEvent = {
+      ...ev,
+      ...patch,
+      id: ev.id
+    };
+    return updatedEvent;
+  });
+  if (!updatedEvent) {
+    return res.status(404).json({ ok: false, error: 'Impegno non trovato' });
+  }
+  saveState();
+  res.json({ ok: true, event: updatedEvent, events: state.events });
+});
+
 app.delete('/api/events/:id', (req, res) => {
   const id = String(req.params.id || '');
   state.deletedEventIds = Array.from(new Set([...(state.deletedEventIds || []), id]));
