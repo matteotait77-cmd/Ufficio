@@ -24,7 +24,6 @@
       min-height: 100vh;
     }
 
-    /* Login sempre visibile finché non si entra */
     section#loginScreen {
       display: none;
     }
@@ -92,6 +91,7 @@
       background: var(--card-2);
     }
     .btn:hover { filter: brightness(1.08); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
     .btn-primary { background: var(--accent); }
     .btn-danger { background: var(--danger); }
     .btn-success { background: var(--ok); }
@@ -516,7 +516,7 @@
 
   <script>
     const SHARED_PASS = 'ufficio2026';
-    const SESSION_KEY = 'ufficiocal_user_v3';
+    const SESSION_KEY = 'ufficiocal_user_v4';
     const $ = id => document.getElementById(id);
 
     const state = {
@@ -714,10 +714,18 @@
       return Array.from(set);
     }
 
+    function closeEventModal() {
+      $('eventModal').classList.remove('open');
+      $('saveEventBtn').disabled = false;
+      $('saveEventBtn').textContent = $('evEditId').value ? 'Aggiorna impegno' : 'Salva impegno';
+      $('eventFormStatus').textContent = '';
+    }
+
     function openCreateModal(dateIso = '') {
       const dStr = dateIso || toIso(new Date());
       $('evEditId').value = '';
       $('eventModalTitle').textContent = 'Nuovo impegno & Alert bot';
+      $('saveEventBtn').disabled = false;
       $('saveEventBtn').textContent = 'Salva impegno';
       $('eventForm').reset();
       $('evDate').value = dStr;
@@ -740,6 +748,7 @@
         : [{ date: ev.alertDate || ev.date, time: ev.alertTime || ev.startTime }];
       $('evEditId').value = ev.id;
       $('eventModalTitle').textContent = 'Modifica impegno & Alert';
+      $('saveEventBtn').disabled = false;
       $('saveEventBtn').textContent = 'Aggiorna impegno';
       $('evTitle').value = ev.title || '';
       $('evColor').value = ev.color || 'blue';
@@ -982,8 +991,8 @@
     });
 
     $('openNewEventBtn').addEventListener('click', () => openCreateModal(toIso(new Date())));
-    $('closeModalBtn').addEventListener('click', () => $('eventModal').classList.remove('open'));
-    $('cancelModalBtn').addEventListener('click', () => $('eventModal').classList.remove('open'));
+    $('closeModalBtn').addEventListener('click', closeEventModal);
+    $('cancelModalBtn').addEventListener('click', closeEventModal);
 
     $('eventForm').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -991,6 +1000,12 @@
       const recipientMode = getRecipientMode();
       const emails = collectSelectedEmails();
       const alerts = collectAlertsFromForm();
+      const sendNowChecked = $('evSendEmailNow').checked;
+
+      $('saveEventBtn').disabled = true;
+      $('saveEventBtn').textContent = 'Salvataggio...';
+      $('eventFormStatus').style.color = '#38bdf8';
+      $('eventFormStatus').textContent = 'Salvataggio impegno in corso...';
 
       const payload = {
         id: editId || ('ev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
@@ -1011,20 +1026,31 @@
       const url = editId ? '/api/events/' + encodeURIComponent(editId) : '/api/events';
       const method = editId ? 'PUT' : 'POST';
 
-      const resp = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      const data = await resp.json().catch(() => ({}));
+      try {
+        const resp = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json().catch(() => ({}));
 
-      if (resp.ok && data.ok) {
+        if (!resp.ok || !data.ok) {
+          $('saveEventBtn').disabled = false;
+          $('saveEventBtn').textContent = editId ? 'Aggiorna impegno' : 'Salva impegno';
+          $('eventFormStatus').style.color = '#f87171';
+          $('eventFormStatus').textContent = data.error || 'Errore salvataggio impegno';
+          return;
+        }
+
         state.events = Array.isArray(data.events)
           ? data.events
           : (editId ? state.events.map(x => String(x.id) === editId ? payload : x) : [payload, ...state.events]);
 
-        if ($('evSendEmailNow').checked) {
-          const mailResp = await fetch('/api/send-email', {
+        closeEventModal();
+        renderAll();
+
+        if (sendNowChecked) {
+          fetch('/api/send-email', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1034,16 +1060,21 @@
               eventTitle: payload.title,
               html: `<p><strong>${payload.title}</strong> — Data: ${payload.date} (${payload.startTime} - ${payload.endTime})</p><p>Alert impostati: ${alerts.map(a => a.date + ' ' + a.time).join(', ')}</p>`
             })
-          }).catch(() => null);
-          const mailJson = mailResp ? await mailResp.json().catch(() => ({})) : {};
-          if (Array.isArray(mailJson.sentEmails)) state.sentEmails = mailJson.sentEmails;
+          })
+            .then(r => r.json().catch(() => ({})))
+            .then(mailJson => {
+              if (Array.isArray(mailJson.sentEmails)) {
+                state.sentEmails = mailJson.sentEmails;
+                renderMailLog();
+              }
+            })
+            .catch(() => {});
         }
-
-        $('eventModal').classList.remove('open');
-        renderAll();
-      } else {
+      } catch (err) {
+        $('saveEventBtn').disabled = false;
+        $('saveEventBtn').textContent = editId ? 'Aggiorna impegno' : 'Salva impegno';
         $('eventFormStatus').style.color = '#f87171';
-        $('eventFormStatus').textContent = data.error || 'Errore salvataggio impegno';
+        $('eventFormStatus').textContent = 'Errore rete: ' + err.message;
       }
     });
 
