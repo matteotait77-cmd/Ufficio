@@ -1158,5 +1158,32 @@
 })();
 </script>
 <!-- UFFICIO_DAY_PANEL_END -->
+<script>
+(function () {
+  if (window.__ufficioGridSyncPatch) return;
+  window.__ufficioGridSyncPatch = true;
+
+  window.ufficioSyncCalendarDom = function (deletedTitle, deletedRange) {
+    const t = String(deletedTitle || '').trim();
+    const r = String(deletedRange || '').trim();
+    if (!t && !r) return;
+
+    const candidates = document.querySelectorAll('span, div, button, a, p, small');
+    candidates.forEach(el => {
+      if (el.closest && el.closest('#ufficio-panel-clean')) return;
+      if (el.children && el.children.length > 0) return;
+      const txt = (el.textContent || '').trim();
+      if (!txt || txt.length > 60) return;
+      const matchesTitle = t && txt.includes(t);
+      const matchesRange = r && txt.includes(r);
+      if (matchesTitle && matchesRange) {
+        el.remove();
+      } else if (t && txt === t) {
+        el.remove();
+      }
+    });
+  };
+})();
+</script>
 </body>
 </html>
