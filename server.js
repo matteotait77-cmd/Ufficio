@@ -294,29 +294,52 @@ app.put('/api/events/:id', (req, res) => {
   res.json({ ok: true, event: updatedEvent, events: state.events });
 });
 
-app.delete('/api/events/:id', (req, res) => {
-  const id = String(req.params.id || '').trim();
-  if (!id) return res.status(400).json({ ok: false, error: 'ID mancante' });
-
-  const list = Array.isArray(state.events) ? state.events : [];
-  const beforeLen = list.length;
-  state.events = list.filter(ev => String((ev && (ev.id ?? ev._id)) ?? '').trim() !== id);
-
-  if (state.events.length === beforeLen) {
-    return res.status(404).json({ ok: false, error: 'Impegno non trovato', id });
-  }
-
+function purgeDeletedEventsFromState() {
+  if (!state || typeof state !== 'object') return;
+  if (!Array.isArray(state.events)) state.events = [];
   if (!Array.isArray(state.deletedEventIds)) state.deletedEventIds = [];
-  if (!state.deletedEventIds.includes(id)) state.deletedEventIds.push(id);
+  const deletedSet = new Set(state.deletedEventIds.map(x => String(x).trim()).filter(Boolean));
+  if (deletedSet.size > 0) {
+    state.events = state.events.filter(ev => {
+      const evId = String((ev && (ev.id ?? ev._id)) ?? '').trim();
+      return !evId || !deletedSet.has(evId);
+    });
+  }
+}
+
+function handleDeleteEventById(rawId, res) {
+  const id = String(rawId || '').trim();
+  if (!id) {
+    return res.status(400).json({ ok: false, error: 'ID mancante' });
+  }
+  if (!Array.isArray(state.deletedEventIds)) state.deletedEventIds = [];
+  if (!state.deletedEventIds.includes(id)) {
+    state.deletedEventIds.push(id);
+  }
+  purgeDeletedEventsFromState();
 
   if (typeof saveState === 'function') {
-    try { saveState(); } catch (e) { console.error('saveState err:', e); }
+    try { saveState(); } catch (err) { console.error('Errore saveState:', err); }
   }
   if (typeof syncStateToCloud === 'function') {
-    Promise.resolve().then(() => syncStateToCloud()).catch(e => console.error('cloud sync err:', e));
+    Promise.resolve().then(() => syncStateToCloud()).catch(err => console.error('Errore syncStateToCloud:', err));
   }
 
-  return res.json({ ok: true, deletedId: id, events: state.events });
+  return res.json({
+    ok: true,
+    deletedId: id,
+    deletedEventIds: state.deletedEventIds,
+    events: state.events
+  });
+}
+
+app.delete('/api/events/:id', (req, res) => {
+  return handleDeleteEventById(req.params.id, res);
+});
+
+app.post('/api/events/delete', (req, res) => {
+  const id = req.body && (req.body.id ?? req.body.eventId);
+  return handleDeleteEventById(id, res);
 });
 
 app.get('/api/state', (req, res) => {

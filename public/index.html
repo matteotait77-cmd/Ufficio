@@ -963,11 +963,38 @@
     syncFromServer();
     updateScreen();
   </script>
+<script>
+(function () {
+  if (window.__ufficioGridSyncPatch) return;
+  window.__ufficioGridSyncPatch = true;
+
+  window.ufficioSyncCalendarDom = function (deletedTitle, deletedRange) {
+    const t = String(deletedTitle || '').trim();
+    const r = String(deletedRange || '').trim();
+    if (!t && !r) return;
+
+    const candidates = document.querySelectorAll('span, div, button, a, p, small');
+    candidates.forEach(el => {
+      if (el.closest && el.closest('#ufficio-panel-clean')) return;
+      if (el.children && el.children.length > 0) return;
+      const txt = (el.textContent || '').trim();
+      if (!txt || txt.length > 60) return;
+      const matchesTitle = t && txt.includes(t);
+      const matchesRange = r && txt.includes(r);
+      if (matchesTitle && matchesRange) {
+        el.remove();
+      } else if (t && txt === t) {
+        el.remove();
+      }
+    });
+  };
+})();
+</script>
 <!-- UFFICIO_DAY_PANEL_START -->
 <script>
 (function () {
-  if (window.__ufficioCleanPanel) return;
-  window.__ufficioCleanPanel = true;
+  if (window.__ufficioPanelV3) return;
+  window.__ufficioPanelV3 = true;
 
   let activeDate = null;
 
@@ -1027,6 +1054,44 @@
     return iso(year, month, day);
   }
 
+  function removeMatchingBadgeFromDom(ev) {
+    const title = String((ev && ev.title) || '').trim().toLowerCase();
+    const s = String((ev && ev.startTime) || '').trim();
+    const e = String((ev && ev.endTime) || '').trim();
+    const compact = (s && e) ? `${s}-${e}` : '';
+    const spaced = (s && e) ? `${s} - ${e}` : '';
+
+    document.querySelectorAll('span, div, button, a, p, small').forEach(el => {
+      if (!el || !el.parentNode) return;
+      if (el.id === 'ufficio-panel-clean' || (el.closest && el.closest('#ufficio-panel-clean'))) return;
+      if (el.children && el.children.length > 0) return;
+      const raw = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!raw || raw.length > 80) return;
+      const low = raw.toLowerCase();
+      const matchTitle = title && low.includes(title);
+      const matchTime = (compact && raw.includes(compact)) || (spaced && raw.includes(spaced));
+      if ((matchTitle && matchTime) || (title && low === title)) {
+        el.remove();
+      }
+    });
+  }
+
+  async function requestDeleteEvent(evId) {
+    const encoded = encodeURIComponent(String(evId));
+    let resp = await fetch(`/api/events/${encoded}`, { method: 'DELETE', cache: 'no-store' });
+    let data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      resp = await fetch('/api/events/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ id: String(evId) })
+      });
+      data = await resp.json().catch(() => ({}));
+    }
+    return { resp, data };
+  }
+
   async function fetchStateEvents() {
     const r = await fetch('/api/state', { cache: 'no-store' });
     const j = await r.json().catch(() => ({}));
@@ -1040,7 +1105,6 @@
     if (typeof window.renderCalendar === 'function') window.renderCalendar();
     if (typeof window.renderEvents === 'function') window.renderEvents();
     if (typeof window.renderAll === 'function') window.renderAll();
-    if (typeof window.loadState === 'function') window.loadState();
   }
 
   async function openDay(dateStr, statusMsg, isErr) {
@@ -1096,21 +1160,20 @@
           bDel.disabled = true;
           bDel.textContent = '...';
           try {
-            const url = '/api/events/' + encodeURIComponent(String(ev.id));
-            const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 8000); const resp = await fetch(url, { method: 'DELETE', signal: ctrl.signal }); clearTimeout(t);
-            const data = await resp.json().catch(() => ({}));
+            const { resp, data } = await requestDeleteEvent(ev.id);
             if (resp.ok && data.ok) {
+              removeMatchingBadgeFromDom(ev);
+              syncAppViews(data.events);
               await openDay(activeDate, 'Impegno eliminato.', false);
-              setTimeout(() => { window.location.reload(); }, 250);
             } else {
               bDel.disabled = false;
               bDel.textContent = 'Elimina';
-              await openDay(activeDate, `Errore DELETE (${resp.status}): ${data.error || 'non eliminato'}`, true);
+              setStatus(`Errore eliminazione (${resp.status}): ${data.error || 'non eliminato'}`, true);
             }
           } catch (err) {
             bDel.disabled = false;
             bDel.textContent = 'Elimina';
-            setStatus('Errore rete DELETE: ' + (err && err.message ? err.message : err), true);
+            setStatus('Errore rete: ' + (err && err.message ? err.message : err), true);
           }
         };
 
@@ -1158,32 +1221,5 @@
 })();
 </script>
 <!-- UFFICIO_DAY_PANEL_END -->
-<script>
-(function () {
-  if (window.__ufficioGridSyncPatch) return;
-  window.__ufficioGridSyncPatch = true;
-
-  window.ufficioSyncCalendarDom = function (deletedTitle, deletedRange) {
-    const t = String(deletedTitle || '').trim();
-    const r = String(deletedRange || '').trim();
-    if (!t && !r) return;
-
-    const candidates = document.querySelectorAll('span, div, button, a, p, small');
-    candidates.forEach(el => {
-      if (el.closest && el.closest('#ufficio-panel-clean')) return;
-      if (el.children && el.children.length > 0) return;
-      const txt = (el.textContent || '').trim();
-      if (!txt || txt.length > 60) return;
-      const matchesTitle = t && txt.includes(t);
-      const matchesRange = r && txt.includes(r);
-      if (matchesTitle && matchesRange) {
-        el.remove();
-      } else if (t && txt === t) {
-        el.remove();
-      }
-    });
-  };
-})();
-</script>
 </body>
 </html>
