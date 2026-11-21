@@ -1104,13 +1104,27 @@
   async function fetchStateEvents() {
     const r = await fetch('/api/state', { cache: 'no-store' });
     const j = await r.json().catch(() => ({}));
-    return Array.isArray(j.events) ? j.events : [];
+    const list = Array.isArray(j.events) ? j.events : [];
+    try {
+      if (typeof state !== 'undefined' && state) {
+        state.events = list;
+      }
+    } catch (_) {}
+    return list;
   }
 
   function syncAppViews(eventsArr) {
     if (Array.isArray(eventsArr)) {
       window.events = eventsArr;
+      try {
+        if (typeof state !== 'undefined' && state) {
+          state.events = eventsArr;
+        }
+      } catch (_) {}
     }
+    try {
+      if (typeof renderDashboard === 'function') renderDashboard();
+    } catch (_) {}
     if (typeof window.renderCalendar === 'function') window.renderCalendar();
     if (typeof window.renderEvents === 'function') window.renderEvents();
     if (typeof window.renderAll === 'function') window.renderAll();
