@@ -36,15 +36,15 @@
     }
     .login-card {
       width: 100%;
-      max-width: 420px;
+      max-width: 440px;
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 28px;
-      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.55);
     }
-    .login-card h1 { font-size: 1.7rem; margin-bottom: 6px; }
-    .login-card p { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+    .login-card h1 { font-size: 1.75rem; margin-bottom: 6px; }
+    .login-card p { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; line-height: 1.4; }
     .field { margin-bottom: 13px; }
     .field label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 5px; }
     .field input, .field select, .field textarea {
@@ -57,7 +57,7 @@
       font-size: 0.9rem;
     }
 
-    /* App Layout */
+    /* App */
     .topbar {
       display: flex;
       flex-wrap: wrap;
@@ -186,6 +186,50 @@
     .event-item-meta { font-size: 0.75rem; color: var(--muted); }
     .event-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
+    .radio-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-size: 0.82rem;
+    }
+    .radio-row label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      color: var(--text);
+    }
+
+    .picker-box {
+      max-height: 110px;
+      overflow-y: auto;
+      background: var(--card-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .mail-log {
+      max-height: 130px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .mail-row {
+      font-size: 0.75rem;
+      color: var(--muted);
+      background: var(--card-2);
+      padding: 6px 8px;
+      border-radius: 7px;
+    }
+
+    /* Modale Impegno */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -200,61 +244,72 @@
     .modal-backdrop.open { display: flex; }
     .modal-box {
       width: 100%;
-      max-width: 480px;
+      max-width: 500px;
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 14px;
       padding: 20px;
-      max-height: 90vh;
+      max-height: 92vh;
       overflow-y: auto;
     }
     .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
-    .picker-box {
-      max-height: 120px;
-      overflow-y: auto;
-      background: var(--card-2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
+    /* Pallino AI + Popup */
+    #aiBubbleBtn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2563eb, #0ea5e9);
+      color: #fff;
+      border: 2px solid #93c5fd;
+      font-weight: 800;
+      font-size: 0.92rem;
+      cursor: pointer;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.55);
+      z-index: 900;
+      display: none;
+      align-items: center;
+      justify-content: center;
     }
+    #aiBubbleBtn.visible { display: flex; }
+
+    #aiPopup {
+      position: fixed;
+      bottom: 86px;
+      right: 20px;
+      width: 350px;
+      max-width: calc(100vw - 32px);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 18px 45px rgba(0,0,0,0.7);
+      z-index: 910;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #aiPopup.open { display: flex; }
 
     .ai-msgs {
-      max-height: 210px;
+      max-height: 220px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
       gap: 8px;
-      margin: 10px 0;
     }
     .ai-msg {
       padding: 8px 10px;
       border-radius: 8px;
-      font-size: 0.83rem;
+      font-size: 0.82rem;
       background: var(--card-2);
       white-space: pre-wrap;
     }
     .ai-msg.user { border-left: 3px solid #38bdf8; }
     .ai-msg.bot { border-left: 3px solid #4ade80; }
-
-    .mail-log {
-      max-height: 140px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      margin-top: 8px;
-    }
-    .mail-row {
-      font-size: 0.76rem;
-      color: var(--muted);
-      background: var(--card-2);
-      padding: 6px 8px;
-      border-radius: 7px;
-    }
   </style>
 </head>
 <body>
@@ -263,21 +318,21 @@
   <section id="loginScreen" class="screen active">
     <div class="login-card">
       <h1>UfficioCal</h1>
-      <p>Accesso condiviso del team con salvataggio persistente.</p>
+      <p>Registrazione e accesso condiviso: ogni persona resta salvata con il proprio profilo e riceve gli alert configurati.</p>
       <form id="loginForm">
         <div class="field">
-          <label for="loginName">Nome (opzionale)</label>
+          <label for="loginName">Nome (opzionale, ricavato anche dall'email)</label>
           <input id="loginName" type="text" placeholder="Es. Matteo" />
         </div>
         <div class="field">
-          <label for="loginEmail">Email ufficio</label>
+          <label for="loginEmail">Email personale / ufficio</label>
           <input id="loginEmail" type="email" placeholder="nome@azienda.it" required />
         </div>
         <div class="field">
           <label for="loginPass">Password condivisa</label>
-          <input id="loginPass" type="password" placeholder="Password" required />
+          <input id="loginPass" type="password" placeholder="Inserisci password" required />
         </div>
-        <button type="submit" class="btn btn-primary" style="width:100%;">Entra in UfficioCal</button>
+        <button type="submit" class="btn btn-primary" style="width:100%;">Entra e salva profilo</button>
       </form>
     </div>
   </section>
@@ -315,11 +370,15 @@
         </div>
 
         <div class="panel">
-          <h3 style="margin-bottom:8px;">Invio rapido mail &amp; Alert</h3>
+          <h3 style="margin-bottom:8px;">Invio rapido mail &amp; Stato invii</h3>
           <form id="quickMailForm">
+            <div class="radio-row">
+              <label><input type="radio" name="qmMode" value="all" checked /> Tutti gli utenti registrati</label>
+              <label><input type="radio" name="qmMode" value="selected" /> Solo indirizzi inseriti</label>
+            </div>
             <div class="field">
               <label for="quickMailTo">Destinatari (separati da virgola)</label>
-              <input id="quickMailTo" type="text" placeholder="email1@azienda.it, email2@azienda.it" required />
+              <input id="quickMailTo" type="text" placeholder="email1@azienda.it, email2@azienda.it" />
             </div>
             <div class="field">
               <label for="quickMailSubject">Oggetto</label>
@@ -334,17 +393,22 @@
           <div id="quickMailStatus" style="font-size:0.78rem;margin-top:6px;color:#38bdf8;"></div>
           <div id="mailLogList" class="mail-log"></div>
         </div>
-
-        <div class="panel">
-          <h3>Assistente AI</h3>
-          <div id="aiMsgs" class="ai-msgs"></div>
-          <form id="aiForm" style="display:flex;gap:8px;">
-            <input id="aiInput" type="text" placeholder="Chiedi qualcosa sugli impegni..." style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--card-2);color:#fff;" />
-            <button type="submit" class="btn btn-primary">Invia</button>
-          </form>
-        </div>
       </aside>
     </main>
+
+    <!-- Pallino AI + Popup -->
+    <button id="aiBubbleBtn" type="button" title="Apri Assistente AI">AI</button>
+    <div id="aiPopup">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);padding-bottom:6px;">
+        <strong style="font-size:0.9rem;">Assistente AI UfficioCal</strong>
+        <button id="closeAiBtn" type="button" class="btn btn-ghost btn-sm">✕</button>
+      </div>
+      <div id="aiMsgs" class="ai-msgs"></div>
+      <form id="aiForm" style="display:flex;gap:6px;">
+        <input id="aiInput" type="text" placeholder="Chiedi sugli impegni o alert..." style="flex:1;padding:7px 9px;border-radius:8px;border:1px solid var(--border);background:var(--card-2);color:#fff;font-size:0.84rem;" />
+        <button type="submit" class="btn btn-primary btn-sm">Invia</button>
+      </form>
+    </div>
   </section>
 
   <!-- MODALE CREA / MODIFICA IMPEGNO & ALERT -->
@@ -386,25 +450,47 @@
             <input id="evEnd" type="time" value="10:00" required />
           </div>
         </div>
+
+        <div class="row-2">
+          <div class="field">
+            <label for="evAlertDate">Data alert</label>
+            <input id="evAlertDate" type="date" required />
+          </div>
+          <div class="field">
+            <label for="evAlertTime">Ora alert</label>
+            <input id="evAlertTime" type="time" value="08:45" required />
+          </div>
+        </div>
+
         <div class="field">
           <label for="evAlertCount">Numero di alert (da 1 a 10)</label>
           <select id="evAlertCount"></select>
         </div>
+
         <div class="field">
-          <label>Destinatari registrati</label>
+          <label>Destinatari alert</label>
+          <div class="radio-row">
+            <label><input type="radio" name="evRecMode" value="all" checked /> Tutti gli utenti registrati (predefinito)</label>
+            <label><input type="radio" name="evRecMode" value="selected" /> Seleziona alcuni utenti</label>
+          </div>
           <div id="recipientPicker" class="picker-box"></div>
         </div>
+
         <div class="field">
           <label for="evExtraEmails">Email extra separate da virgola (opzionale)</label>
           <input id="evExtraEmails" type="text" placeholder="altro@azienda.it" />
         </div>
+
         <div class="field">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-            <input id="evSendEmailNow" type="checkbox" checked style="width:auto;" />
-            <span>Invia subito email di avviso ai destinatari selezionati</span>
+            <input id="evSendEmailNow" type="checkbox" style="width:auto;" />
+            <span>Invia subito una mail di conferma (oltre all'alert alla data e ora impostate)</span>
           </label>
         </div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+
+        <div id="eventFormStatus" style="font-size:0.78rem;color:#38bdf8;margin-bottom:8px;"></div>
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
           <button type="button" id="cancelModalBtn" class="btn btn-ghost">Annulla</button>
           <button type="submit" id="saveEventBtn" class="btn btn-primary">Salva impegno</button>
         </div>
@@ -426,7 +512,6 @@
       cursor: new Date()
     };
 
-    // Popola selettore alert 1..10
     for (let n = 1; n <= 10; n++) {
       const opt = document.createElement('option');
       opt.value = String(n);
@@ -466,6 +551,8 @@
       const logged = Boolean(state.user && state.user.email);
       $('loginScreen').classList.toggle('active', !logged);
       $('appScreen').classList.toggle('active', logged);
+      $('aiBubbleBtn').classList.toggle('visible', logged);
+      if (!logged) $('aiPopup').classList.remove('open');
       if (logged) {
         $('welcomeTitle').textContent = `UfficioCal — ${state.user.name || state.user.email}`;
         $('userBadge').textContent = `${state.user.email} · Attivo`;
@@ -484,7 +571,12 @@
       } catch (_) {}
     }
 
-    function renderRecipientPicker(selectedEmails = []) {
+    function getRecipientMode() {
+      const el = document.querySelector('input[name="evRecMode"]:checked');
+      return el ? el.value : 'all';
+    }
+
+    function renderRecipientPicker(selectedEmails = [], mode = 'all') {
       const picker = $('recipientPicker');
       const known = new Set();
       (state.users || []).forEach(u => {
@@ -509,7 +601,7 @@
         cb.type = 'checkbox';
         cb.className = 'rec-cb';
         cb.value = em;
-        cb.checked = pre.has(em);
+        cb.checked = mode === 'all' ? true : pre.has(em);
         cb.style.width = 'auto';
         const span = document.createElement('span');
         span.textContent = em;
@@ -519,12 +611,29 @@
       });
     }
 
-    function collectSelectedEmails() {
-      const set = new Set();
-      document.querySelectorAll('.rec-cb:checked').forEach(cb => {
-        const v = String(cb.value || '').trim().toLowerCase();
-        if (v) set.add(v);
+    document.querySelectorAll('input[name="evRecMode"]').forEach(r => {
+      r.addEventListener('change', () => {
+        const mode = getRecipientMode();
+        document.querySelectorAll('.rec-cb').forEach(cb => {
+          cb.checked = (mode === 'all');
+        });
       });
+    });
+
+    function collectSelectedEmails() {
+      const mode = getRecipientMode();
+      const set = new Set();
+      if (mode === 'all') {
+        (state.users || []).forEach(u => {
+          if (u && u.email) set.add(String(u.email).trim().toLowerCase());
+        });
+        if (state.user && state.user.email) set.add(String(state.user.email).trim().toLowerCase());
+      } else {
+        document.querySelectorAll('.rec-cb:checked').forEach(cb => {
+          const v = String(cb.value || '').trim().toLowerCase();
+          if (v) set.add(v);
+        });
+      }
       String($('evExtraEmails').value || '')
         .split(',')
         .map(x => x.trim().toLowerCase())
@@ -534,32 +643,44 @@
     }
 
     function openCreateModal(dateIso = '') {
+      const dStr = dateIso || toIso(new Date());
       $('evEditId').value = '';
       $('eventModalTitle').textContent = 'Nuovo impegno & Alert bot';
       $('saveEventBtn').textContent = 'Salva impegno';
       $('eventForm').reset();
-      $('evDate').value = dateIso || toIso(new Date());
+      $('evDate').value = dStr;
       $('evStart').value = '09:00';
       $('evEnd').value = '10:00';
+      $('evAlertDate').value = dStr;
+      $('evAlertTime').value = '08:45';
       $('evAlertCount').value = '1';
-      $('evSendEmailNow').checked = true;
-      renderRecipientPicker([]);
+      $('evSendEmailNow').checked = false;
+      $('eventFormStatus').textContent = '';
+      const allRadio = document.querySelector('input[name="evRecMode"][value="all"]');
+      if (allRadio) allRadio.checked = true;
+      renderRecipientPicker([], 'all');
       $('eventModal').classList.add('open');
     }
 
     function openEditModal(ev) {
+      const mode = ev.recipientMode === 'selected' ? 'selected' : 'all';
       $('evEditId').value = ev.id;
-      $('eventModalTitle').textContent = 'Modifica impegno';
+      $('eventModalTitle').textContent = 'Modifica impegno & Alert';
       $('saveEventBtn').textContent = 'Aggiorna impegno';
       $('evTitle').value = ev.title || '';
       $('evColor').value = ev.color || 'blue';
       $('evDate').value = ev.date || toIso(new Date());
       $('evStart').value = ev.startTime || '09:00';
       $('evEnd').value = ev.endTime || '10:00';
+      $('evAlertDate').value = ev.alertDate || ev.date || toIso(new Date());
+      $('evAlertTime').value = ev.alertTime || ev.startTime || '08:45';
       $('evAlertCount').value = String(ev.alertCount || 1);
       $('evExtraEmails').value = '';
       $('evSendEmailNow').checked = false;
-      renderRecipientPicker(Array.isArray(ev.emails) ? ev.emails : []);
+      $('eventFormStatus').textContent = '';
+      const mRadio = document.querySelector(`input[name="evRecMode"][value="${mode}"]`);
+      if (mRadio) mRadio.checked = true;
+      renderRecipientPicker(Array.isArray(ev.emails) ? ev.emails : [], mode);
       $('eventModal').classList.add('open');
     }
 
@@ -688,8 +809,8 @@
         row.className = 'event-item';
 
         const info = document.createElement('div');
-        const alertsTxt = ev.alertCount ? ` · ${ev.alertCount} alert` : '';
-        info.innerHTML = `<div class="event-item-title">${ev.title || 'Impegno'}</div><div class="event-item-meta">${ev.date || ''} · ${ev.startTime || ''}-${ev.endTime || ''}${alertsTxt}</div>`;
+        const alertInfo = ev.alertDate ? ` · Alert ${ev.alertDate} ${ev.alertTime || ''}` : '';
+        info.innerHTML = `<div class="event-item-title">${ev.title || 'Impegno'}</div><div class="event-item-meta">${ev.date || ''} · ${ev.startTime || ''}-${ev.endTime || ''}${alertInfo}</div>`;
 
         const actions = document.createElement('div');
         actions.className = 'event-actions';
@@ -726,10 +847,15 @@
       const box = $('mailLogList');
       const mails = Array.isArray(state.sentEmails) ? state.sentEmails.slice(0, 6) : [];
       box.innerHTML = '';
+      if (!mails.length) {
+        box.innerHTML = '<div class="mail-row">Nessuna email inviata finora.</div>';
+        return;
+      }
       mails.forEach(m => {
         const d = document.createElement('div');
         d.className = 'mail-row';
-        d.textContent = `${m.subject || 'Avviso'} → ${(m.to || []).join(', ')}`;
+        const when = m.sentAt ? new Date(m.sentAt).toLocaleString('it-IT') : '';
+        d.textContent = `${m.subject || 'Avviso'} → ${(m.to || []).join(', ')} (${when})`;
         box.appendChild(d);
       });
     }
@@ -787,6 +913,7 @@
     $('eventForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const editId = String($('evEditId').value || '').trim();
+      const recipientMode = getRecipientMode();
       const emails = collectSelectedEmails();
       const payload = {
         id: editId || ('ev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
@@ -795,7 +922,10 @@
         startTime: $('evStart').value,
         endTime: $('evEnd').value,
         color: $('evColor').value,
+        alertDate: $('evAlertDate').value || $('evDate').value,
+        alertTime: $('evAlertTime').value || $('evStart').value,
         alertCount: Number($('evAlertCount').value || 1),
+        recipientMode,
         emails,
         createdBy: state.user?.email || ''
       };
@@ -815,15 +945,16 @@
           ? data.events
           : (editId ? state.events.map(x => String(x.id) === editId ? payload : x) : [payload, ...state.events]);
 
-        if ($('evSendEmailNow').checked && payload.emails.length) {
+        if ($('evSendEmailNow').checked) {
           const mailResp = await fetch('/api/send-email', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              to: payload.emails,
+              to: emails,
+              recipientMode,
               subject: `${editId ? 'Aggiornamento impegno' : 'Nuovo impegno'}: ${payload.title}`,
               eventTitle: payload.title,
-              html: `<p><strong>${payload.title}</strong> — ${payload.date} (${payload.startTime} - ${payload.endTime}) · Alert: ${payload.alertCount}</p>`
+              html: `<p><strong>${payload.title}</strong> — Data: ${payload.date} (${payload.startTime} - ${payload.endTime})</p><p>Alert programmato: ${payload.alertDate} alle ${payload.alertTime} (${payload.alertCount} alert)</p>`
             })
           }).catch(() => null);
           const mailJson = mailResp ? await mailResp.json().catch(() => ({})) : {};
@@ -832,11 +963,16 @@
 
         $('eventModal').classList.remove('open');
         renderAll();
+      } else {
+        $('eventFormStatus').style.color = '#f87171';
+        $('eventFormStatus').textContent = data.error || 'Errore salvataggio impegno';
       }
     });
 
     $('quickMailForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const modeEl = document.querySelector('input[name="qmMode"]:checked');
+      const qmMode = modeEl ? modeEl.value : 'all';
       const to = $('quickMailTo').value.split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
       const subject = $('quickMailSubject').value.trim() || 'Avviso UfficioCal';
       const text = $('quickMailBody').value.trim() || 'Notifica inviata da UfficioCal.';
@@ -848,14 +984,14 @@
         const r = await fetch('/api/send-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to, subject, text, html: `<p>${text}</p>` })
+          body: JSON.stringify({ to, recipientMode: qmMode, subject, text, html: `<p>${text}</p>` })
         });
         const j = await r.json().catch(() => ({}));
         if (r.ok && j.ok) {
           if (Array.isArray(j.sentEmails)) state.sentEmails = j.sentEmails;
           renderMailLog();
           st.style.color = '#4ade80';
-          st.textContent = 'Email inviata.';
+          st.textContent = `Email inviata a: ${(j.record?.to || []).join(', ')}`;
           $('quickMailForm').reset();
         } else {
           st.style.color = '#f87171';
@@ -865,6 +1001,13 @@
         st.style.color = '#f87171';
         st.textContent = 'Errore rete: ' + err.message;
       }
+    });
+
+    $('aiBubbleBtn').addEventListener('click', () => {
+      $('aiPopup').classList.toggle('open');
+    });
+    $('closeAiBtn').addEventListener('click', () => {
+      $('aiPopup').classList.remove('open');
     });
 
     $('aiForm').addEventListener('submit', async (e) => {
@@ -882,6 +1025,7 @@
       bDiv.className = 'ai-msg bot';
       bDiv.textContent = 'Sto pensando...';
       $('aiMsgs').appendChild(bDiv);
+      $('aiMsgs').scrollTop = $('aiMsgs').scrollHeight;
 
       const sys = `Sei l'assistente AI di UfficioCal. Utente attivo: ${state.user?.name || ''} (${state.user?.email || ''}). Data: ${new Date().toLocaleDateString('it-IT')}. Regole: NON usare mai tabelle con '|', NON usare '**', scrivi solo testo semplice con righe separate e trattini '- '. Dati: ${JSON.stringify({ users: state.users, events: state.events, sentEmails: (state.sentEmails || []).slice(0, 15) })}`;
 
@@ -896,11 +1040,13 @@
       } catch (err) {
         bDiv.textContent = 'Errore AI: ' + err.message;
       }
+      $('aiMsgs').scrollTop = $('aiMsgs').scrollHeight;
     });
 
     loadSession();
     syncScreen();
     fetchServerState();
+    setInterval(fetchServerState, 30000);
   </script>
 </body>
 </html>

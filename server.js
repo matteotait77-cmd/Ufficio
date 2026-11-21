@@ -137,6 +137,100 @@ function persistAll() {
   Promise.resolve().then(() => syncToCloud()).catch(() => {});
 }
 
+function getAllRegisteredEmails() {
+  return Array.from(new Set(
+    (state.users || [])
+      .map(u => String((u && u.email) || '').trim().toLowerCase())
+      .filter(e => e.includes('@'))
+  ));
+}
+
+function resolveRecipients(evOrObj) {
+  const mode = evOrObj && evOrObj.recipientMode === 'selected' ? 'selected' : 'all';
+  const explicit = Array.isArray(evOrObj && evOrObj.emails)
+    ? evOrObj.emails.map(x => String(x || '').trim().toLowerCase()).filter(e => e.includes('@'))
+    : [];
+  if (mode === 'all') {
+    return Array.from(new Set([...getAllRegisteredEmails(), ...explicit]));
+  }
+  return Array.from(new Set(explicit));
+}
+
+async function sendMailNow({ to, subject, html, text, eventTitle }) {
+  const recipients = Array.isArray(to)
+    ? Array.from(new Set(to.map(x => String(x || '').trim().toLowerCase()).filter(e => e.includes('@'))))
+    : String(to || '').split(',').map(x => x.trim().toLowerCase()).filter(e => e.includes('@'));
+
+  if (!recipients.length) {
+    return { ok: false, error: 'Nessun destinatario valido' };
+  }
+  if (!gmailTransporter) {
+    return { ok: false, error: 'GMAIL_USER o GMAIL_APP_PASSWORD non configurati su Render' };
+  }
+
+  const info = await gmailTransporter.sendMail({
+    from: `"UfficioCal Bot" <${GMAIL_USER}>`,
+    to: recipients.join(', '),
+    subject: subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`,
+    text: text || undefined,
+    html: html || `<p>Notifica per l'impegno <strong>${eventTitle || 'Impegno'}</strong>.</p>`
+  });
+
+  const record = {
+    id: 'mail_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+    to: recipients,
+    subject: subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`,
+    sentAt: new Date().toISOString(),
+    messageId: info.messageId || ''
+  };
+  state.sentEmails = [record, ...(state.sentEmails || [])].slice(0, 100);
+  persistAll();
+  return { ok: true, record, sentEmails: state.sentEmails };
+}
+
+function parseAlertTimestamp(ev) {
+  if (!ev || !ev.alertDate || !ev.alertTime) return null;
+  const isoCandidate = `${String(ev.alertDate).trim()}T${String(ev.alertTime).trim()}`;
+  const ts = Date.parse(isoCandidate);
+  return Number.isNaN(ts) ? null : ts;
+}
+
+async function checkScheduledAlerts() {
+  purgeDeletedEvents();
+  if (!Array.isArray(state.events) || !state.events.length) return;
+  const nowTs = Date.now();
+  let changed = false;
+
+  for (const ev of state.events) {
+    if (!ev || ev.alertSentAt) continue;
+    const alertTs = parseAlertTimestamp(ev);
+    if (alertTs !== null && alertTs <= nowTs) {
+      const recipients = resolveRecipients(ev);
+      if (recipients.length && gmailTransporter) {
+        try {
+          await sendMailNow({
+            to: recipients,
+            subject: `Alert UfficioCal: ${ev.title || 'Impegno'}`,
+            eventTitle: ev.title,
+            html: `<p><strong>Promemoria / Alert impegno:</strong> ${ev.title || 'Impegno'}</p><p>Data impegno: <strong>${ev.date || ''}</strong> (${ev.startTime || ''} - ${ev.endTime || ''})</p><p>Alert programmato: ${ev.alertDate} alle ${ev.alertTime}</p>`
+          });
+          ev.alertSentAt = new Date().toISOString();
+          changed = true;
+        } catch (err) {
+          console.error('Errore invio alert programmato:', err.message);
+        }
+      } else {
+        ev.alertSentAt = new Date().toISOString();
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) {
+    persistAll();
+  }
+}
+
 function deleteEventById(rawId) {
   const id = String(rawId || '').trim();
   if (!id) return { ok: false, status: 400, error: 'ID mancante' };
@@ -155,7 +249,7 @@ function deleteEventById(rawId) {
 }
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, time: new Date().toISOString() });
+  res.json({ ok: true, gmailConfigured: Boolean(gmailTransporter), time: new Date().toISOString() });
 });
 
 app.get('/api/state', (req, res) => {
@@ -194,8 +288,12 @@ app.post('/api/events', (req, res) => {
     startTime: String(ev.startTime || '09:00').trim(),
     endTime: String(ev.endTime || '10:00').trim(),
     color: String(ev.color || 'blue').trim(),
-    emails: Array.isArray(ev.emails) ? ev.emails : [],
+    alertDate: String(ev.alertDate || ev.date || '').trim(),
+    alertTime: String(ev.alertTime || ev.startTime || '09:00').trim(),
     alertCount: Number(ev.alertCount || 1),
+    recipientMode: ev.recipientMode === 'selected' ? 'selected' : 'all',
+    emails: Array.isArray(ev.emails) ? ev.emails : [],
+    alertSentAt: null,
     createdBy: ev.createdBy || ''
   };
   state.deletedEventIds = (state.deletedEventIds || []).filter(x => String(x) !== id);
@@ -211,7 +309,13 @@ app.put('/api/events/:id', (req, res) => {
   let updated = null;
   state.events = (state.events || []).map(ev => {
     if (String(ev.id) !== id) return ev;
-    updated = { ...ev, ...patch, id: ev.id };
+    const alertChanged = (patch.alertDate && patch.alertDate !== ev.alertDate) || (patch.alertTime && patch.alertTime !== ev.alertTime);
+    updated = {
+      ...ev,
+      ...patch,
+      alertSentAt: alertChanged ? null : ev.alertSentAt,
+      id: ev.id
+    };
     return updated;
   });
   purgeDeletedEvents();
@@ -231,37 +335,17 @@ app.post('/api/events/delete', (req, res) => {
 });
 
 app.post('/api/send-email', async (req, res) => {
-  const { to, subject, html, text, eventTitle } = req.body || {};
-  const recipients = Array.isArray(to)
-    ? Array.from(new Set(to.map(x => String(x || '').trim().toLowerCase()).filter(Boolean)))
-    : String(to || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
-
-  if (!recipients.length) {
-    return res.status(400).json({ ok: false, error: 'Nessun destinatario valido' });
-  }
-  if (!gmailTransporter) {
-    return res.status(500).json({ ok: false, error: 'GMAIL_USER o GMAIL_APP_PASSWORD non configurati' });
-  }
+  const { to, subject, html, text, eventTitle, recipientMode } = req.body || {};
+  const finalTo = recipientMode === 'all'
+    ? Array.from(new Set([...getAllRegisteredEmails(), ...(Array.isArray(to) ? to : String(to || '').split(',').map(x => x.trim()))]))
+    : to;
 
   try {
-    const info = await gmailTransporter.sendMail({
-      from: `"UfficioCal Bot" <${GMAIL_USER}>`,
-      to: recipients.join(', '),
-      subject: subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`,
-      text: text || undefined,
-      html: html || `<p>Notifica per l'impegno <strong>${eventTitle || 'Impegno'}</strong>.</p>`
-    });
-
-    const record = {
-      id: 'mail_' + Date.now(),
-      to: recipients,
-      subject: subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`,
-      sentAt: new Date().toISOString(),
-      messageId: info.messageId || ''
-    };
-    state.sentEmails = [record, ...(state.sentEmails || [])].slice(0, 100);
-    persistAll();
-    res.json({ ok: true, record, sentEmails: state.sentEmails });
+    const result = await sendMailNow({ to: finalTo, subject, html, text, eventTitle });
+    if (!result.ok) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message || 'Errore invio email' });
   }
@@ -309,7 +393,8 @@ app.get('*', (req, res) => {
 });
 
 loadLocal();
-restoreFromCloud();
+restoreFromCloud().then(() => checkScheduledAlerts());
+setInterval(checkScheduledAlerts, 30000);
 
 app.listen(PORT, () => {
   console.log(`UfficioCal attivo su http://localhost:${PORT}`);
