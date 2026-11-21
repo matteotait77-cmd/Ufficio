@@ -1070,17 +1070,32 @@
     });
   }
 
+  async function fetchWithTimeout(url, opts, ms = 5000) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try {
+      return await fetch(url, { ...(opts || {}), signal: ctrl.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async function callDelete(evId) {
-    const enc = encodeURIComponent(String(evId));
-    let r = await fetch(`/api/events/${enc}`, { method: 'DELETE', cache: 'no-store' });
+    const idStr = String(evId || '').trim();
+    let r = await fetchWithTimeout('/api/events/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({ id: idStr })
+    }, 5000);
     let j = await r.json().catch(() => ({}));
+
     if (!r.ok || !j.ok) {
-      r = await fetch('/api/events/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        cache: 'no-store',
-        body: JSON.stringify({ id: String(evId) })
-      });
+      const enc = encodeURIComponent(idStr);
+      r = await fetchWithTimeout(`/api/events/${enc}`, {
+        method: 'DELETE',
+        cache: 'no-store'
+      }, 5000);
       j = await r.json().catch(() => ({}));
     }
     return { r, j };
