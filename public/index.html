@@ -1002,5 +1002,114 @@
   }, true);
 })();
 </script>
+<script>
+(function() {
+  let activeEventId = null;
+
+  function findEventIdFromElement(el) {
+    if (!el) return null;
+    const attrs = ['data-event-id', 'data-id', 'data-evento-id', 'data-item-id'];
+    let cur = el;
+    for (let i = 0; i < 6 && cur; i++) {
+      for (const a of attrs) {
+        const val = cur.getAttribute && cur.getAttribute(a);
+        if (val) return String(val);
+      }
+      if (cur.dataset && (cur.dataset.eventId || cur.dataset.id)) {
+        return String(cur.dataset.eventId || cur.dataset.id);
+      }
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+
+  function guessEventIdFromText(el) {
+    if (!el || !Array.isArray(window.events)) return null;
+    const rawText = (el.innerText || el.textContent || '').trim();
+    if (!rawText) return null;
+    const found = window.events.find(ev => {
+      if (!ev || !ev.title) return false;
+      return rawText.includes(String(ev.title).trim());
+    });
+    return found ? String(found.id) : null;
+  }
+
+  window.deleteEventFromServer = async function(eventId) {
+    const id = String(eventId || activeEventId || '').trim();
+    if (!id) {
+      alert('Seleziona prima un impegno da eliminare.');
+      return false;
+    }
+    try {
+      const res = await fetch('/api/events/' + encodeURIComponent(id), { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        if (Array.isArray(data.events)) {
+          window.events = data.events;
+        } else if (Array.isArray(window.events)) {
+          window.events = window.events.filter(ev => String(ev.id) !== id);
+        }
+        try {
+          for (const k of Object.keys(localStorage)) {
+            const val = localStorage.getItem(k);
+            if (!val || !val.includes(id)) continue;
+            try {
+              const parsed = JSON.parse(val);
+              if (Array.isArray(parsed.events)) {
+                parsed.events = parsed.events.filter(ev => String(ev.id) !== id);
+                localStorage.setItem(k, JSON.stringify(parsed));
+              } else if (Array.isArray(parsed)) {
+                const filtered = parsed.filter(ev => !(ev && String(ev.id) === id));
+                if (filtered.length !== parsed.length) {
+                  localStorage.setItem(k, JSON.stringify(filtered));
+                }
+              }
+            } catch (_) {}
+          }
+        } catch (_) {}
+
+        activeEventId = null;
+        if (typeof window.renderCalendar === 'function') window.renderCalendar();
+        if (typeof window.renderEvents === 'function') window.renderEvents();
+        if (typeof window.renderAll === 'function') window.renderAll();
+        if (typeof window.loadState === 'function') window.loadState();
+        return true;
+      } else {
+        alert('Errore durante l\'eliminazione dell\'impegno sul server.');
+      }
+    } catch (err) {
+      console.error('Errore eliminazione evento:', err);
+      alert('Errore di rete durante l\'eliminazione.');
+    }
+    return false;
+  };
+
+  // Traccia l'ultimo impegno cliccato o aperto
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('button, a, [role="button"]');
+    if (btn) {
+      const label = (btn.textContent || '').trim().toLowerCase();
+      if (label.includes('elimina') || label.includes('cancella') || label.includes('rimuovi')) {
+        const idFromBtn = findEventIdFromElement(btn)
+          || (window.selectedEvent && window.selectedEvent.id)
+          || (window.editingEvent && window.editingEvent.id)
+          || (window.currentEvent && window.currentEvent.id)
+          || activeEventId;
+        if (idFromBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          window.deleteEventFromServer(idFromBtn);
+          return;
+        }
+      }
+    }
+
+    const clickedId = findEventIdFromElement(e.target) || guessEventIdFromText(e.target.closest('div, li, tr, article, section'));
+    if (clickedId) {
+      activeEventId = clickedId;
+    }
+  }, true);
+})();
+</script>
 </body>
 </html>
