@@ -21,6 +21,37 @@ const GMAIL_USER = (process.env.GMAIL_USER || '').trim();
 const GMAIL_APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
 const RESEND_API_KEY = (process.env.RESEND_API_KEY || '').trim();
 const BOT_FROM = (process.env.BOT_FROM || '').trim();
+const DEFAULT_SITE_URL = (process.env.SITE_URL || process.env.RENDER_EXTERNAL_URL || 'https://ufficio-2-jw4e.onrender.com').trim().replace(/\/+$/, '');
+
+const COLOR_LABELS = {
+  blue: 'Blu',
+  green: 'Verde',
+  amber: 'Ambra',
+  red: 'Rosso',
+  purple: 'Viola'
+};
+
+function getColorLabel(color) {
+  const key = String(color || 'blue').trim().toLowerCase();
+  return COLOR_LABELS[key] || (color || 'Blu');
+}
+
+function getSiteUrl(req) {
+  if (DEFAULT_SITE_URL) return DEFAULT_SITE_URL;
+  if (req && req.get('host')) {
+    const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+    return `${proto}://${req.get('host')}`;
+  }
+  return 'https://ufficio-2-jw4e.onrender.com';
+}
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 const gmailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
   ? nodemailer.createTransport({
@@ -125,10 +156,16 @@ async function restoreFromCloud() {
     if (data && typeof data.result === 'string' && data.result.trim()) {
       const parsed = JSON.parse(data.result);
       if (parsed && typeof parsed === 'object') {
+        const mergedUsers = Array.isArray(parsed.users) ? [...parsed.users] : [];
+        (state.users || []).forEach(u => {
+          if (u && u.email && !mergedUsers.some(x => String(x.email || '').toLowerCase() === String(u.email).toLowerCase())) {
+            mergedUsers.push(u);
+          }
+        });
         state = {
-          users: Array.isArray(parsed.users) ? parsed.users : state.users,
-          events: Array.isArray(parsed.events) ? parsed.events : state.events,
-          sentEmails: Array.isArray(parsed.sentEmails) ? parsed.sentEmails : state.sentEmails,
+          users: mergedUsers,
+          events: Array.isArray(parsed.events) && parsed.events.length ? parsed.events : state.events,
+          sentEmails: Array.isArray(parsed.sentEmails) && parsed.sentEmails.length ? parsed.sentEmails : state.sentEmails,
           deletedEventIds: Array.isArray(parsed.deletedEventIds) ? parsed.deletedEventIds : state.deletedEventIds
         };
         purgeDeletedEvents();
@@ -158,10 +195,33 @@ function resolveRecipients(evOrObj) {
   const explicit = Array.isArray(evOrObj && evOrObj.emails)
     ? evOrObj.emails.map(x => String(x || '').trim().toLowerCase()).filter(e => e.includes('@'))
     : [];
+  const creator = evOrObj && evOrObj.createdBy ? String(evOrObj.createdBy).trim().toLowerCase() : '';
   if (mode === 'all') {
-    return Array.from(new Set([...getAllRegisteredEmails(), ...explicit]));
+    const all = getAllRegisteredEmails();
+    return Array.from(new Set([...all, ...explicit, ...(creator.includes('@') ? [creator] : [])]));
   }
-  return Array.from(new Set(explicit));
+  return Array.from(new Set([...explicit, ...(explicit.length === 0 && creator.includes('@') ? [creator] : [])]));
+}
+
+function buildMailHtml({ bodyHtml, text, colorLabel, siteUrl }) {
+  const safeUrl = escapeHtml(siteUrl || getSiteUrl());
+  const safeColor = escapeHtml(colorLabel || '');
+  const inner = bodyHtml || `<p>${escapeHtml(text || 'Notifica inviata da UfficioCal.')}</p>`;
+  return `
+    <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.5;color:#0f172a;">
+      ${inner}
+      ${safeColor ? `<p><strong>Colore impegno:</strong> ${safeColor}</p>` : ''}
+      <p><strong>Apri UfficioCal:</strong> <a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a></p>
+    </div>
+  `.trim();
+}
+
+function buildMailText({ text, colorLabel, siteUrl }) {
+  const lines = [];
+  if (text) lines.push(String(text));
+  if (colorLabel) lines.push(`Colore impegno: ${colorLabel}`);
+  lines.push(`Apri UfficioCal: ${siteUrl || getSiteUrl()}`);
+  return lines.join('\n');
 }
 
 async function sendViaResend({ recipients, subject, html, text }) {
@@ -177,7 +237,7 @@ async function sendViaResend({ recipients, subject, html, text }) {
       to: recipients,
       subject,
       html,
-      text: text || html.replace(/<[^>]+>/g, ' ')
+      text
     })
   });
   const data = await resp.json().catch(() => ({}));
@@ -187,7 +247,7 @@ async function sendViaResend({ recipients, subject, html, text }) {
   return data.id || 'resend_ok';
 }
 
-async function sendMailNow({ to, subject, html, text, eventTitle }) {
+async function sendMailNow({ to, subject, html, text, eventTitle, color, siteUrl }) {
   const recipients = Array.isArray(to)
     ? Array.from(new Set(to.map(x => String(x || '').trim().toLowerCase()).filter(e => e.includes('@'))))
     : String(to || '').split(',').map(x => x.trim().toLowerCase()).filter(e => e.includes('@'));
@@ -196,8 +256,11 @@ async function sendMailNow({ to, subject, html, text, eventTitle }) {
     return { ok: false, error: 'Nessun destinatario valido (inserisci un indirizzo o registra un utente)' };
   }
 
+  const resolvedUrl = siteUrl || getSiteUrl();
+  const colorLabel = color ? getColorLabel(color) : '';
   const finalSubject = subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`;
-  const finalHtml = html || `<p>Notifica per l'impegno <strong>${eventTitle || 'Impegno'}</strong>.</p>`;
+  const finalHtml = buildMailHtml({ bodyHtml: html, text, colorLabel, siteUrl: resolvedUrl });
+  const finalText = buildMailText({ text: text || (eventTitle ? `Notifica impegno: ${eventTitle}` : ''), colorLabel, siteUrl: resolvedUrl });
 
   const errors = [];
 
@@ -207,13 +270,14 @@ async function sendMailNow({ to, subject, html, text, eventTitle }) {
         from: `"UfficioCal Bot" <${GMAIL_USER}>`,
         to: recipients.join(', '),
         subject: finalSubject,
-        text: text || undefined,
+        text: finalText,
         html: finalHtml
       });
       const record = {
         id: 'mail_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
         to: recipients,
         subject: finalSubject,
+        color: colorLabel || undefined,
         provider: 'gmail',
         sentAt: new Date().toISOString(),
         messageId: info.messageId || ''
@@ -228,11 +292,12 @@ async function sendMailNow({ to, subject, html, text, eventTitle }) {
 
   if (RESEND_API_KEY) {
     try {
-      const msgId = await sendViaResend({ recipients, subject: finalSubject, html: finalHtml, text });
+      const msgId = await sendViaResend({ recipients, subject: finalSubject, html: finalHtml, text: finalText });
       const record = {
         id: 'mail_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
         to: recipients,
         subject: finalSubject,
+        color: colorLabel || undefined,
         provider: 'resend',
         sentAt: new Date().toISOString(),
         messageId: msgId
@@ -291,6 +356,7 @@ async function checkScheduledAlerts() {
     if (!ev) continue;
     ev.alerts = normalizeAlerts(ev);
     const recipients = resolveRecipients(ev);
+    const colorLabel = getColorLabel(ev.color);
 
     for (const al of ev.alerts) {
       if (al.sentAt) continue;
@@ -301,7 +367,9 @@ async function checkScheduledAlerts() {
             to: recipients,
             subject: `Alert #${al.index} UfficioCal: ${ev.title || 'Impegno'}`,
             eventTitle: ev.title,
-            html: `<p><strong>Alert #${al.index} per l'impegno:</strong> ${ev.title || 'Impegno'}</p><p>Data impegno: <strong>${ev.date || ''}</strong> (${ev.startTime || ''} - ${ev.endTime || ''})</p><p>Orario alert impostato: <strong>${al.date} alle ${al.time}</strong></p>`
+            color: colorLabel,
+            siteUrl: DEFAULT_SITE_URL,
+            html: `<p><strong>Alert #${al.index} per l'impegno:</strong> ${escapeHtml(ev.title || 'Impegno')}</p><p><strong>Data impegno:</strong> ${escapeHtml(ev.date || '')} (${escapeHtml(ev.startTime || '')} - ${escapeHtml(ev.endTime || '')})</p><p><strong>Orario alert impostato:</strong> ${escapeHtml(al.date)} alle ${escapeHtml(al.time)}</p>`
           });
           if (res.ok) {
             al.sentAt = new Date().toISOString();
@@ -343,6 +411,8 @@ app.get('/api/health', (req, res) => {
     gmailUserSet: Boolean(GMAIL_USER),
     gmailPassSet: Boolean(GMAIL_APP_PASSWORD),
     resendSet: Boolean(RESEND_API_KEY),
+    siteUrl: getSiteUrl(req),
+    registeredUsersCount: (state.users || []).length,
     time: new Date().toISOString()
   });
 });
@@ -435,7 +505,7 @@ app.post('/api/events/delete', (req, res) => {
 });
 
 app.post('/api/send-email', async (req, res) => {
-  const { to, subject, html, text, eventTitle, recipientMode } = req.body || {};
+  const { to, subject, html, text, eventTitle, recipientMode, color } = req.body || {};
   const explicitList = Array.isArray(to)
     ? to
     : String(to || '').split(',').map(x => x.trim()).filter(Boolean);
@@ -443,7 +513,15 @@ app.post('/api/send-email', async (req, res) => {
     ? Array.from(new Set([...getAllRegisteredEmails(), ...explicitList]))
     : explicitList;
 
-  const result = await sendMailNow({ to: finalTo, subject, html, text, eventTitle });
+  const result = await sendMailNow({
+    to: finalTo,
+    subject,
+    html,
+    text,
+    eventTitle,
+    color,
+    siteUrl: getSiteUrl(req)
+  });
   if (!result.ok) {
     return res.status(400).json(result);
   }

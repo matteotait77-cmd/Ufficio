@@ -344,7 +344,7 @@
   <section id="loginScreen" class="active">
     <div class="login-card">
       <h1>UfficioCal</h1>
-      <p>Registrazione e accesso condiviso: ogni persona resta salvata con il proprio profilo e riceve gli alert configurati.</p>
+      <p>Registrazione e accesso condiviso: ogni persona che si logga resta salvata con il proprio profilo e riceve gli alert configurati.</p>
       <form id="loginForm">
         <div class="field">
           <label for="loginName">Nome (opzionale, ricavato anche dall'email)</label>
@@ -517,6 +517,7 @@
   <script>
     const SHARED_PASS = 'ufficio2026';
     const SESSION_KEY = 'ufficiocal_user_v4';
+    const COLOR_NAMES = { blue: 'Blu', green: 'Verde', amber: 'Ambra', red: 'Rosso', purple: 'Viola' };
     const $ = id => document.getElementById(id);
 
     const state = {
@@ -894,7 +895,8 @@
         const alList = Array.isArray(ev.alerts) && ev.alerts.length
           ? ev.alerts.map(a => `${a.date} ${a.time}`).join(', ')
           : (ev.alertDate ? `${ev.alertDate} ${ev.alertTime || ''}` : '');
-        info.innerHTML = `<div class="event-item-title">${ev.title || 'Impegno'}</div><div class="event-item-meta">${ev.date || ''} · ${ev.startTime || ''}-${ev.endTime || ''}${alList ? ' · Alert: ' + alList : ''}</div>`;
+        const colName = COLOR_NAMES[ev.color] || ev.color || 'Blu';
+        info.innerHTML = `<div class="event-item-title">${ev.title || 'Impegno'} (${colName})</div><div class="event-item-meta">${ev.date || ''} · ${ev.startTime || ''}-${ev.endTime || ''}${alList ? ' · Alert: ' + alList : ''}</div>`;
 
         const actions = document.createElement('div');
         actions.className = 'event-actions';
@@ -960,6 +962,9 @@
       const email = $('loginEmail').value.trim().toLowerCase();
       const name = $('loginName').value.trim() || email.split('@')[0];
       state.user = { email, name };
+      if (!state.users.some(u => String(u.email || '').toLowerCase() === email)) {
+        state.users.push({ email, name });
+      }
       syncScreen();
       await fetch('/api/state', {
         method: 'POST',
@@ -1001,6 +1006,7 @@
       const emails = collectSelectedEmails();
       const alerts = collectAlertsFromForm();
       const sendNowChecked = $('evSendEmailNow').checked;
+      const siteUrl = window.location.origin;
 
       $('saveEventBtn').disabled = true;
       $('saveEventBtn').textContent = 'Salvataggio...';
@@ -1050,6 +1056,7 @@
         renderAll();
 
         if (sendNowChecked) {
+          const colorLabel = COLOR_NAMES[payload.color] || payload.color;
           fetch('/api/send-email', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1058,6 +1065,8 @@
               recipientMode,
               subject: `${editId ? 'Aggiornamento impegno' : 'Nuovo impegno'}: ${payload.title}`,
               eventTitle: payload.title,
+              color: colorLabel,
+              siteUrl,
               html: `<p><strong>${payload.title}</strong> — Data: ${payload.date} (${payload.startTime} - ${payload.endTime})</p><p>Alert impostati: ${alerts.map(a => a.date + ' ' + a.time).join(', ')}</p>`
             })
           })
@@ -1093,7 +1102,14 @@
         const r = await fetch('/api/send-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ to, recipientMode: qmMode, subject, text, html: `<p>${text}</p>` })
+          body: JSON.stringify({
+            to,
+            recipientMode: qmMode,
+            subject,
+            text,
+            siteUrl: window.location.origin,
+            html: `<p>${text}</p>`
+          })
         });
         const j = await r.json().catch(() => ({}));
         if (r.ok && j.ok) {
