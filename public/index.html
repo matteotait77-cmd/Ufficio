@@ -1116,18 +1116,16 @@
   function syncAppViews(eventsArr) {
     if (Array.isArray(eventsArr)) {
       window.events = eventsArr;
-      try {
-        if (typeof state !== 'undefined' && state) {
-          state.events = eventsArr;
-        }
-      } catch (_) {}
     }
-    try {
-      if (typeof renderDashboard === 'function') renderDashboard();
-    } catch (_) {}
+    if (typeof window.renderDashboard === 'function') window.renderDashboard();
     if (typeof window.renderCalendar === 'function') window.renderCalendar();
     if (typeof window.renderEvents === 'function') window.renderEvents();
     if (typeof window.renderAll === 'function') window.renderAll();
+
+    // Forza il ricalcolo/ridisegno della griglia se esposta o tramite evento custom
+    try {
+      window.dispatchEvent(new CustomEvent('ufficiocal:events-updated', { detail: { events: eventsArr || [] } }));
+    } catch (_) {}
   }
 
   async function openDay(dateStr, statusMsg, isErr) {
