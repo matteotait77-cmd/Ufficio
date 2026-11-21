@@ -190,16 +190,16 @@ async function dispatchResendEmail({ to, subject, html, eventTitle, color, sourc
   }
 
   const info = await gmailTransporter.sendMail({
-    from: "UfficioCal Bot" <>,
+    from: `"UfficioCal Bot" <${GMAIL_USER}>`,
     to: recipients.join(', '),
-    subject: subject || Avviso UfficioCal: ,
-    html: html || <p>Notifica per l'impegno <strong></strong>.</p>
+    subject: subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`,
+    html: html || `<p>Notifica per l'impegno <strong>${eventTitle || 'Impegno'}</strong>.</p>`
   });
 
   const record = {
     id: 'mail_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
     to: recipients,
-    subject: subject || Avviso UfficioCal: ,
+    subject: subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`,
     eventTitle: eventTitle || 'Impegno',
     color: color || '#3b82f6',
     source: source || 'bot-alert',
