@@ -19,6 +19,8 @@ const CLOUD_KEY = 'ufficiocal:state:v1';
 const GROQ_API_KEY = (process.env.GROQ_API_KEY || '').trim();
 const GMAIL_USER = (process.env.GMAIL_USER || '').trim();
 const GMAIL_APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
+const RESEND_API_KEY = (process.env.RESEND_API_KEY || '').trim();
+const BOT_FROM = (process.env.BOT_FROM || '').trim();
 
 const gmailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
   ? nodemailer.createTransport({
@@ -27,9 +29,9 @@ const gmailTransporter = (GMAIL_USER && GMAIL_APP_PASSWORD)
       secure: false,
       requireTLS: true,
       auth: { user: GMAIL_USER, pass: GMAIL_APP_PASSWORD },
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 20000
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000
     })
   : null;
 
@@ -162,6 +164,29 @@ function resolveRecipients(evOrObj) {
   return Array.from(new Set(explicit));
 }
 
+async function sendViaResend({ recipients, subject, html, text }) {
+  const fromAddr = BOT_FROM || (GMAIL_USER ? `UfficioCal Bot <${GMAIL_USER}>` : 'UfficioCal Bot <onboarding@resend.dev>');
+  const resp = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: fromAddr,
+      to: recipients,
+      subject,
+      html,
+      text: text || html.replace(/<[^>]+>/g, ' ')
+    })
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw new Error(data.message || data.error?.message || `Resend HTTP ${resp.status}`);
+  }
+  return data.id || 'resend_ok';
+}
+
 async function sendMailNow({ to, subject, html, text, eventTitle }) {
   const recipients = Array.isArray(to)
     ? Array.from(new Set(to.map(x => String(x || '').trim().toLowerCase()).filter(e => e.includes('@'))))
@@ -170,34 +195,60 @@ async function sendMailNow({ to, subject, html, text, eventTitle }) {
   if (!recipients.length) {
     return { ok: false, error: 'Nessun destinatario valido (inserisci un indirizzo o registra un utente)' };
   }
-  if (!gmailTransporter) {
-    return { ok: false, error: `Credenziali Gmail mancanti su Render (GMAIL_USER=${GMAIL_USER ? 'OK' : 'MANCANTE'}, GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD ? 'OK' : 'MANCANTE'})` };
+
+  const finalSubject = subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`;
+  const finalHtml = html || `<p>Notifica per l'impegno <strong>${eventTitle || 'Impegno'}</strong>.</p>`;
+
+  const errors = [];
+
+  if (gmailTransporter) {
+    try {
+      const info = await gmailTransporter.sendMail({
+        from: `"UfficioCal Bot" <${GMAIL_USER}>`,
+        to: recipients.join(', '),
+        subject: finalSubject,
+        text: text || undefined,
+        html: finalHtml
+      });
+      const record = {
+        id: 'mail_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+        to: recipients,
+        subject: finalSubject,
+        provider: 'gmail',
+        sentAt: new Date().toISOString(),
+        messageId: info.messageId || ''
+      };
+      state.sentEmails = [record, ...(state.sentEmails || [])].slice(0, 100);
+      persistAll();
+      return { ok: true, record, sentEmails: state.sentEmails };
+    } catch (err) {
+      errors.push(`Gmail: ${err.code || 'SMTP'} - ${err.response || err.message}`);
+    }
   }
 
-  try {
-    const info = await gmailTransporter.sendMail({
-      from: `"UfficioCal Bot" <${GMAIL_USER}>`,
-      to: recipients.join(', '),
-      subject: subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`,
-      text: text || undefined,
-      html: html || `<p>Notifica per l'impegno <strong>${eventTitle || 'Impegno'}</strong>.</p>`
-    });
-
-    const record = {
-      id: 'mail_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-      to: recipients,
-      subject: subject || `Avviso UfficioCal: ${eventTitle || 'Impegno'}`,
-      sentAt: new Date().toISOString(),
-      messageId: info.messageId || ''
-    };
-    state.sentEmails = [record, ...(state.sentEmails || [])].slice(0, 100);
-    persistAll();
-    return { ok: true, record, sentEmails: state.sentEmails };
-  } catch (err) {
-    const detail = err.response || err.message || 'Errore SMTP Gmail';
-    console.error('Errore sendMailNow:', detail);
-    return { ok: false, error: `${err.code || 'SMTP'}: ${detail}` };
+  if (RESEND_API_KEY) {
+    try {
+      const msgId = await sendViaResend({ recipients, subject: finalSubject, html: finalHtml, text });
+      const record = {
+        id: 'mail_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
+        to: recipients,
+        subject: finalSubject,
+        provider: 'resend',
+        sentAt: new Date().toISOString(),
+        messageId: msgId
+      };
+      state.sentEmails = [record, ...(state.sentEmails || [])].slice(0, 100);
+      persistAll();
+      return { ok: true, record, sentEmails: state.sentEmails };
+    } catch (err) {
+      errors.push(`Resend: ${err.message}`);
+    }
   }
+
+  if (!errors.length) {
+    return { ok: false, error: 'Nessun provider mail configurato (mancano credenziali Gmail e RESEND_API_KEY)' };
+  }
+  return { ok: false, error: errors.join(' | ') };
 }
 
 function normalizeAlerts(ev) {
@@ -245,7 +296,7 @@ async function checkScheduledAlerts() {
       if (al.sentAt) continue;
       const alTs = parseAlertTs(al.date, al.time);
       if (alTs !== null && alTs <= nowTs) {
-        if (recipients.length && gmailTransporter) {
+        if (recipients.length && (gmailTransporter || RESEND_API_KEY)) {
           const res = await sendMailNow({
             to: recipients,
             subject: `Alert #${al.index} UfficioCal: ${ev.title || 'Impegno'}`,
@@ -291,6 +342,7 @@ app.get('/api/health', (req, res) => {
     ok: true,
     gmailUserSet: Boolean(GMAIL_USER),
     gmailPassSet: Boolean(GMAIL_APP_PASSWORD),
+    resendSet: Boolean(RESEND_API_KEY),
     time: new Date().toISOString()
   });
 });
