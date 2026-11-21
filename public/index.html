@@ -1097,7 +1097,7 @@
           bDel.textContent = '...';
           try {
             const url = '/api/events/' + encodeURIComponent(String(ev.id));
-            const resp = await fetch(url, { method: 'DELETE' });
+            const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 8000); const resp = await fetch(url, { method: 'DELETE', signal: ctrl.signal }); clearTimeout(t);
             const data = await resp.json().catch(() => ({}));
             if (resp.ok && data.ok) {
               syncAppViews(data.events);
