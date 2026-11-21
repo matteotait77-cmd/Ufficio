@@ -294,12 +294,29 @@ app.put('/api/events/:id', (req, res) => {
   res.json({ ok: true, event: updatedEvent, events: state.events });
 });
 
-app.delete('/api/events/:id', (req, res) => {
-  const id = String(req.params.id || '');
-  state.deletedEventIds = Array.from(new Set([...(state.deletedEventIds || []), id]));
-  state.events = (state.events || []).filter(e => String(e.id) !== id);
-  saveState();
-  res.json({ ok: true, events: state.events });
+app.delete('/api/events/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) {
+      return res.status(400).json({ ok: false, error: 'ID mancante' });
+    }
+    const list = Array.isArray(state.events) ? state.events : [];
+    const beforeLen = list.length;
+    state.events = list.filter(ev => String((ev && (ev.id ?? ev._id)) ?? '').trim() !== id);
+    if (state.events.length === beforeLen) {
+      return res.status(404).json({ ok: false, error: 'Impegno non trovato', id });
+    }
+    if (!Array.isArray(state.deletedEventIds)) state.deletedEventIds = [];
+    if (!state.deletedEventIds.includes(id)) state.deletedEventIds.push(id);
+
+    if (typeof saveState === 'function') saveState();
+    if (typeof syncStateToCloud === 'function') await syncStateToCloud();
+
+    return res.json({ ok: true, deletedId: id, events: state.events });
+  } catch (err) {
+    console.error('Errore DELETE /api/events/:id:', err);
+    return res.status(500).json({ ok: false, error: err?.message || 'Errore interno' });
+  }
 });
 
 app.get('/api/state', (req, res) => {
