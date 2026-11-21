@@ -1117,20 +1117,9 @@
     if (Array.isArray(eventsArr)) {
       window.events = eventsArr;
     }
-    try {
-      const grid = document.getElementById('calGrid');
-      const btns = Array.from(document.querySelectorAll('button')).filter(b => {
-        if (b.closest && b.closest('#ufficio-panel-clean')) return false;
-        const t = (b.innerText || b.textContent || '').trim();
-        return ['<', '>', '‹', '›', '←', '→', 'Oggi', 'Mese', 'Settimana'].includes(t);
-      });
-      const prevBtn = btns.find(b => ['<', '‹', '←'].includes((b.innerText || b.textContent || '').trim()));
-      const nextBtn = btns.find(b => ['>', '›', '→'].includes((b.innerText || b.textContent || '').trim()));
-      if (grid && prevBtn && nextBtn) {
-        nextBtn.click();
-        setTimeout(() => prevBtn.click(), 60);
-      }
-    } catch (_) {}
+    if (typeof window.__ufficioRefreshEvents === 'function') {
+      window.__ufficioRefreshEvents(eventsArr);
+    }
   }
 
   async function openDay(dateStr, statusMsg, isErr) {
