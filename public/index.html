@@ -633,7 +633,9 @@
     }
 
     function updateScreen() {
+      if (!state.user || !state.user.email) { try { const savedU = sessionStorage.getItem('ufficiocal_active_user'); if (savedU) state.user = JSON.parse(savedU); } catch (_) {} }
       const logged = Boolean(state.user && state.user.email);
+      if (logged) { try { sessionStorage.setItem('ufficiocal_active_user', JSON.stringify(state.user)); } catch (_) {} }
       $('loginScreen').classList.toggle('active', !logged);
       $('appScreen').classList.toggle('active', logged);
       if (logged) {
@@ -1126,7 +1128,7 @@
             if (r.ok && j.ok) {
               st.style.color = '#4ade80';
               st.textContent = 'Eliminato! Aggiornamento in corso...';
-              setTimeout(() => window.location.reload(), 250);
+              await loadAndRenderList();
             } else {
               del.disabled = false;
               del.textContent = 'Elimina';
