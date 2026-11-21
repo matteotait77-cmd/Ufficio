@@ -342,7 +342,12 @@ function normalizeAlerts(ev) {
 
 function parseAlertTs(dateStr, timeStr) {
   if (!dateStr || !timeStr) return null;
-  const ts = Date.parse(`${String(dateStr).trim()}T${String(timeStr).trim()}`);
+  const dClean = String(dateStr).trim();
+  const tRaw = String(timeStr).trim();
+  const tParts = tRaw.split(':');
+  const hh = String(tParts[0] || '00').padStart(2, '0');
+  const mm = String(tParts[1] || '00').padStart(2, '0');
+  const ts = Date.parse(`${dClean}T${hh}:${mm}:00`);
   return Number.isNaN(ts) ? null : ts;
 }
 
@@ -374,6 +379,8 @@ async function checkScheduledAlerts() {
           if (res.ok) {
             al.sentAt = new Date().toISOString();
             changed = true;
+          } else {
+            console.error('Alert non inviato:', res.error);
           }
         } else {
           al.sentAt = new Date().toISOString();
@@ -413,8 +420,32 @@ app.get('/api/health', (req, res) => {
     resendSet: Boolean(RESEND_API_KEY),
     siteUrl: getSiteUrl(req),
     registeredUsersCount: (state.users || []).length,
+    serverNowIso: new Date().toISOString(),
     time: new Date().toISOString()
   });
+});
+
+app.get('/api/alerts-debug', (req, res) => {
+  const nowTs = Date.now();
+  const pending = [];
+  for (const ev of (state.events || [])) {
+    const alerts = normalizeAlerts(ev);
+    for (const al of alerts) {
+      const ts = parseAlertTs(al.date, al.time);
+      pending.push({
+        eventId: ev.id,
+        title: ev.title,
+        alertIndex: al.index,
+        date: al.date,
+        time: al.time,
+        parsedIso: ts ? new Date(ts).toISOString() : null,
+        isDue: ts !== null ? ts <= nowTs : false,
+        sentAt: al.sentAt || null,
+        recipients: resolveRecipients(ev)
+      });
+    }
+  }
+  res.json({ nowIso: new Date(nowTs).toISOString(), alerts: pending });
 });
 
 app.get('/api/state', (req, res) => {
